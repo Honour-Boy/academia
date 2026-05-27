@@ -1,6 +1,20 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+// Inline cookie-options type — mirrors the same definition in lib/supabase/server.ts.
+// Avoids depending on @supabase/ssr's re-export which changes between patch versions.
+type CookieSetOptions = {
+  path?: string
+  domain?: string
+  maxAge?: number
+  expires?: Date
+  httpOnly?: boolean
+  secure?: boolean
+  sameSite?: 'strict' | 'lax' | 'none' | boolean
+  priority?: 'low' | 'medium' | 'high'
+  partitioned?: boolean
+}
+
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
 
@@ -10,7 +24,7 @@ export async function middleware(request: NextRequest) {
     {
       cookies: {
         getAll() { return request.cookies.getAll() },
-        setAll(cookiesToSet) {
+        setAll(cookiesToSet: { name: string; value: string; options: CookieSetOptions }[]) {
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           )

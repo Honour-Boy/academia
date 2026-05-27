@@ -125,7 +125,7 @@ studentsRouter.post('/', requireRole(['ADMIN']), async (req, res) => {
   // Create subject enrollments
   const { error: subjectErr } = await adminClient
     .from('student_subjects')
-    .insert(subject_ids.map((sid) => ({ student_id: student.id, subject_id: sid })))
+    .insert(subject_ids.map((sid: string) => ({ student_id: student.id, subject_id: sid })))
 
   if (subjectErr) {
     // Rollback student if subjects fail
@@ -175,7 +175,7 @@ studentsRouter.put('/:id/subjects', requireRole(['ADMIN']), async (req, res) => 
 
   const { error } = await adminClient
     .from('student_subjects')
-    .insert(parsed.data.subject_ids.map((sid) => ({ student_id: studentId, subject_id: sid })))
+    .insert(parsed.data.subject_ids.map((sid: string) => ({ student_id: studentId, subject_id: sid })))
 
   if (error) {
     res.status(500).json({ error: 'Failed to update subject enrollments' })
