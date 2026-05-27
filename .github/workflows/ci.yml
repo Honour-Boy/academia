@@ -1,11 +1,18 @@
 name: CI
 
-# Runs on every push to main/staging and on every PR targeting those branches.
-# Vercel and Render both auto-deploy on push — CI acts as the gate:
-#   staging push  → preview deployment (Vercel preview + Render staging)
-#   main push     → production deployment (Vercel prod + Render prod)
-# Neither platform deploys if any CI job fails (configured in each dashboard
-# under "Deploy on commit that passes CI checks").
+# ─────────────────────────────────────────────────────────────────────────────
+# Flow
+#   PR against staging or main  → run lint/typecheck/test only (no deploy)
+#   Push to staging              → CI → deploy-gate → deploy to preview
+#   Push to main                 → CI → deploy-gate → deploy to production
+#
+# Required secrets (add once in repo Settings → Secrets → Actions):
+#   VERCEL_TOKEN        – from vercel.com/account/tokens
+#   VERCEL_ORG_ID       – from frontend/.vercel/project.json after `vercel link`
+#   VERCEL_PROJECT_ID   – from frontend/.vercel/project.json after `vercel link`
+#   RENDER_DEPLOY_HOOK_PROD     – from Render dashboard → service → Deploy Hook
+#   RENDER_DEPLOY_HOOK_STAGING  – from Render dashboard → staging service → Deploy Hook
+# ─────────────────────────────────────────────────────────────────────────────
 
 on:
   pull_request:
@@ -44,7 +51,6 @@ jobs:
         run: npm test -- --passWithNoTests
         env:
           NODE_ENV: test
-          # Supabase stubs — real values never needed for unit tests
           NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
 
@@ -75,7 +81,6 @@ jobs:
         run: npm test
         env:
           NODE_ENV: test
-          # Stubs — no real Supabase calls during tests
           SUPABASE_URL: https://placeholder.supabase.co
           SUPABASE_SERVICE_ROLE_KEY: placeholder
           SUPABASE_JWT_SECRET: placeholder-jwt-secret-32-chars-min!
@@ -100,14 +105,89 @@ jobs:
           echo "✅ Migration files OK"
 
   # ── Deploy gate ─────────────────────────────────────────────────────────────
-  # This job exists solely so Vercel and Render can check
-  # "all required status checks must pass" before deploying.
-  # It runs after all other jobs and succeeds only if they all do.
+  # All three CI jobs must pass before any deployment happens.
+  # This is the required status check set in branch protection.
   deploy-gate:
     name: Deploy gate — all checks passed
     needs: [frontend, backend, migrations]
     runs-on: ubuntu-latest
     if: success()
+    steps:
+      - run: echo "✅ CI passed — deploying"
+
+  # ── Vercel deploy ────────────────────────────────────────────────────────────
+  # Runs only on push (not PRs) after the gate passes.
+  # Requires: VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID secrets.
+  # Set up: run `cd frontend && npx vercel link` locally, then add secrets.
+  deploy-vercel:
+    name: Deploy — Vercel ${{ github.ref == 'refs/heads/main' && '(production)' || '(preview)' }}
+    needs: [deploy-gate]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
 
     steps:
-      - run: echo "✅ All CI checks passed — Vercel and Render can deploy."
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: Pull Vercel environment info
+        run: |
+          vercel pull --yes \
+            --environment=${{ github.ref == 'refs/heads/main' && 'production' || 'preview' }} \
+            --token=${{ secrets.VERCEL_TOKEN }}
+        working-directory: frontend
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Build
+        run: |
+          vercel build \
+            ${{ github.ref == 'refs/heads/main' && '--prod' || '' }} \
+            --token=${{ secrets.VERCEL_TOKEN }}
+        working-directory: frontend
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Deploy
+        id: deploy
+        run: |
+          url=$(vercel deploy --prebuilt \
+            ${{ github.ref == 'refs/heads/main' && '--prod' || '' }} \
+            --token=${{ secrets.VERCEL_TOKEN }})
+          echo "url=$url" >> $GITHUB_OUTPUT
+          echo "🚀 Deployed: $url"
+        working-directory: frontend
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+  # ── Render deploy ────────────────────────────────────────────────────────────
+  # Triggers a Render deploy hook after the gate passes.
+  # Auto-deploy is OFF in render.yaml — only this job triggers deploys.
+  # Requires: RENDER_DEPLOY_HOOK_PROD, RENDER_DEPLOY_HOOK_STAGING secrets.
+  # Set up: Render dashboard → service → Settings → Deploy Hook → Create.
+  deploy-render:
+    name: Deploy — Render ${{ github.ref == 'refs/heads/main' && '(production)' || '(staging)' }}
+    needs: [deploy-gate]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+
+    steps:
+      - name: Trigger Render deploy (production)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          response=$(curl -sf -X POST "${{ secrets.RENDER_DEPLOY_HOOK_PROD }}")
+          echo "Render deploy triggered: $response"
+
+      - name: Trigger Render deploy (staging)
+        if: github.ref == 'refs/heads/staging'
+        run: |
+          response=$(curl -sf -X POST "${{ secrets.RENDER_DEPLOY_HOOK_STAGING }}")
+          echo "Render deploy triggered: $response"

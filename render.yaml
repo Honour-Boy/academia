@@ -1,12 +1,17 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Render IaC — academia backend
 #
-# Two services share the same code, different branches:
-#   academia-backend          → main   (production)
-#   academia-backend-staging  → staging (preview)
+# Auto-deploy is DISABLED on both services.
+# Deployments are triggered exclusively by the CI deploy-gate job via
+# deploy hooks stored as GitHub secrets (RENDER_DEPLOY_HOOK_PROD/STAGING).
 #
-# Sensitive env vars (SUPABASE_*, FRONTEND_ORIGIN) must be set manually in
-# the Render dashboard for each service — they are NOT stored here.
+# One-time setup after connecting this repo in Render:
+#   1. Each service → Settings → Deploy Hook → Create → copy URL
+#   2. gh secret set RENDER_DEPLOY_HOOK_PROD --body "<url>"
+#   3. gh secret set RENDER_DEPLOY_HOOK_STAGING --body "<url>"
+#
+# Sensitive env vars must be added manually in the Render dashboard
+# (Environment tab of each service) — they are NOT stored here.
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
@@ -16,12 +21,13 @@ services:
     name: academia-backend
     env: node
     plan: free
-    region: frankfurt          # closest to Nigeria
+    region: frankfurt          # closest region to Nigeria
     branch: main
     rootDir: backend
     buildCommand: npm ci && npm run build
     startCommand: npm start
     healthCheckPath: /health
+    autoDeploy: false          # CI-only deploys via deploy hook
 
     envVars:
       - key: NODE_ENV
@@ -29,18 +35,19 @@ services:
       - key: PORT
         value: 10000
 
-      # ⚠ Set these manually in the Render dashboard (never commit real values)
+      # ⚠ Add these in the Render dashboard → Environment (never commit values)
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
       - key: SUPABASE_JWT_SECRET
         sync: false
-      # Comma-separated. Example: https://academia.vercel.app,https://www.yourschool.edu
+      # Comma-separated Vercel URLs. Example:
+      # https://academia.vercel.app,https://academia-git-staging-honour-boy.vercel.app
       - key: FRONTEND_ORIGIN
         sync: false
 
-  # ── Staging (preview) ───────────────────────────────────────────────────────
+  # ── Staging ─────────────────────────────────────────────────────────────────
   - type: web
     name: academia-backend-staging
     env: node
@@ -51,6 +58,7 @@ services:
     buildCommand: npm ci && npm run build
     startCommand: npm start
     healthCheckPath: /health
+    autoDeploy: false          # CI-only deploys via deploy hook
 
     envVars:
       - key: NODE_ENV
@@ -58,13 +66,11 @@ services:
       - key: PORT
         value: 10000
 
-      # Same secrets — re-enter for staging service in dashboard
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
       - key: SUPABASE_JWT_SECRET
         sync: false
-      # Example: https://academia-git-staging-honour-boy.vercel.app
       - key: FRONTEND_ORIGIN
         sync: false
