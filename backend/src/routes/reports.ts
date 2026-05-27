@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { PassThrough } from 'stream'
 import archiver from 'archiver'
 import { z } from 'zod'
 import { requireAuth } from '../middleware/requireAuth'
@@ -245,22 +246,14 @@ reportsRouter.post('/bulk', async (req, res) => {
 function pdfToBuffer(data: ReportData, template: ReturnType<typeof defaultTemplate>): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = []
+    const pass = new PassThrough()
 
-    // Create a mock response-like object to collect the stream
-    const fakeRes = {
-      write: (chunk: Buffer) => { chunks.push(chunk); return true },
-      end: (chunk?: Buffer) => {
-        if (chunk) chunks.push(chunk)
-        resolve(Buffer.concat(chunks))
-      },
-      on: () => fakeRes,
-      once: () => fakeRes,
-      emit: () => false,
-      removeListener: () => fakeRes,
-    } as any
+    pass.on('data', (chunk: Buffer) => chunks.push(chunk))
+    pass.on('end', () => resolve(Buffer.concat(chunks)))
+    pass.on('error', reject)
 
     try {
-      streamReportPDF(data, template, fakeRes)
+      streamReportPDF(data, template, pass)
     } catch (err) {
       reject(err)
     }

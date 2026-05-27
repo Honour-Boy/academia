@@ -24,8 +24,21 @@ export default async function StudentsPage() {
     `)
     .order('full_name')
 
-  const active   = students?.filter((s) => s.is_active) ?? []
-  const inactive = students?.filter((s) => !s.is_active) ?? []
+  // Supabase types the to-one `classes` embed as an array, but PostgREST returns
+  // a single object (or null) at runtime — normalize defensively for both shapes.
+  const rows = (students ?? []).map((s) => {
+    const cls = s.classes as unknown as { name: string } | { name: string }[] | null
+    return {
+      id: s.id as string,
+      full_name: s.full_name as string,
+      student_number: (s.student_number ?? null) as string | null,
+      is_active: s.is_active as boolean,
+      classes: (Array.isArray(cls) ? cls[0] : cls) ?? null,
+    }
+  })
+
+  const active   = rows.filter((s) => s.is_active)
+  const inactive = rows.filter((s) => !s.is_active)
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6">

@@ -1,5 +1,5 @@
 import PDFDocument from 'pdfkit'
-import type { Response } from 'express'
+import { Writable } from 'stream'
 import type { ReportTemplate } from './types'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -57,7 +57,7 @@ const C = {
 export function streamReportPDF(
   data: ReportData,
   _template: ReportTemplate, // kept for future custom template support
-  res: Response,
+  res: Writable,
 ): void {
   const doc = new PDFDocument({ margin: 40, size: 'A4' })
   doc.pipe(res)
