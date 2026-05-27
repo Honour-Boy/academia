@@ -57,3 +57,6 @@ desktop.ini
 .vercel
 *.tsbuildinfo
 .claude
+
+# ── Local-only project state (not shared) ─────────────────────────────────────
+handoff.md
