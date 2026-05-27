@@ -1,0 +1,70 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Render IaC — academia backend
+#
+# Two services share the same code, different branches:
+#   academia-backend          → main   (production)
+#   academia-backend-staging  → staging (preview)
+#
+# Sensitive env vars (SUPABASE_*, FRONTEND_ORIGIN) must be set manually in
+# the Render dashboard for each service — they are NOT stored here.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── Production ──────────────────────────────────────────────────────────────
+  - type: web
+    name: academia-backend
+    env: node
+    plan: free
+    region: frankfurt          # closest to Nigeria
+    branch: main
+    rootDir: backend
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+
+      # ⚠ Set these manually in the Render dashboard (never commit real values)
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      # Comma-separated. Example: https://academia.vercel.app,https://www.yourschool.edu
+      - key: FRONTEND_ORIGIN
+        sync: false
+
+  # ── Staging (preview) ───────────────────────────────────────────────────────
+  - type: web
+    name: academia-backend-staging
+    env: node
+    plan: free
+    region: frankfurt
+    branch: staging
+    rootDir: backend
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+
+    envVars:
+      - key: NODE_ENV
+        value: staging
+      - key: PORT
+        value: 10000
+
+      # Same secrets — re-enter for staging service in dashboard
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      # Example: https://academia-git-staging-honour-boy.vercel.app
+      - key: FRONTEND_ORIGIN
+        sync: false
