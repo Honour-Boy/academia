@@ -36,12 +36,13 @@ export default async function AdminPage() {
   ]
 
   const quickLinks = [
-    { label: 'Add a teacher',          description: 'Create a staff account', href: '/admin/teachers/new' },
-    { label: 'Manage classes',         description: 'Add or edit class groups', href: '/admin/classes' },
-    { label: 'Assign teachers',        description: 'Link teachers to subjects', href: '/admin/assignments' },
-    { label: 'Add students',           description: 'Enroll students in classes', href: '/admin/students/new' },
-    { label: 'View all reports',       description: 'Browse report sheets', href: '/admin/reports' },
-    { label: 'Grade audit log',        description: 'See who changed what', href: '/admin/audit' },
+    { label: 'Add a teacher',          description: 'Create a staff account',               href: '/admin/teachers/new' },
+    { label: 'Manage classes',         description: 'Assign class teachers to each arm',    href: '/admin/classes' },
+    { label: 'Assign subjects',        description: 'Link subject teachers to classes',     href: '/admin/assignments' },
+    { label: 'Enroll students',        description: 'Register students + select subjects',  href: '/admin/students/new' },
+    { label: 'Manage students',        description: 'Edit enrolment or deactivate',         href: '/admin/students' },
+    { label: 'View all reports',       description: 'Browse & download report sheets',      href: '/admin/reports' },
+    { label: 'Grade audit log',        description: 'See who changed what',                 href: '/admin/audit' },
   ]
 
   return (

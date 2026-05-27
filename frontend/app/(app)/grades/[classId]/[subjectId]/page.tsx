@@ -49,18 +49,14 @@ export default async function GradeEntryPage({ params, searchParams }: Props) {
   const [
     { data: classData },
     { data: subjectData },
-    { data: students },
+    { data: enrollments },
     { data: grades },
     { data: components },
   ] = await Promise.all([
     supabase.from('classes').select('*').eq('id', classId).single(),
     supabase.from('subjects').select('*').eq('id', subjectId).single(),
-    supabase
-      .from('students')
-      .select('*')
-      .eq('class_id', classId)
-      .eq('is_active', true)
-      .order('full_name'),
+    // Get students enrolled in this specific subject (new enrolment model)
+    supabase.from('student_subjects').select('student_id').eq('subject_id', subjectId),
     supabase
       .from('grades')
       .select('*')
@@ -73,6 +69,24 @@ export default async function GradeEntryPage({ params, searchParams }: Props) {
       .select('*')
       .order('sort_order'),
   ])
+
+  // Build the student list:
+  // If student_subjects records exist → filter to enrolled students only.
+  // If none exist yet (pre-enrolment data) → show all active class students (backward compat).
+  const enrolledIds = (enrollments ?? []).map((e: { student_id: string }) => e.student_id)
+
+  let studentsQuery = supabase
+    .from('students')
+    .select('*')
+    .eq('class_id', classId)
+    .eq('is_active', true)
+    .order('full_name')
+
+  if (enrolledIds.length > 0) {
+    studentsQuery = studentsQuery.in('id', enrolledIds)
+  }
+
+  const { data: students } = await studentsQuery
 
   if (!classData || !subjectData) notFound()
 

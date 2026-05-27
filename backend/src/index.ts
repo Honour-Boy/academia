@@ -7,6 +7,8 @@ import morgan from 'morgan'
 import { healthRouter } from './routes/health'
 import { gradesRouter } from './routes/grades'
 import { classesRouter } from './routes/classes'
+import { studentsRouter } from './routes/students'
+import { reportsRouter } from './routes/reports'
 import { adminRouter } from './routes/admin'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -59,6 +61,8 @@ app.use(express.json({ limit: '1mb' }))
 app.use('/health', healthRouter)
 app.use('/grades', gradesRouter)
 app.use('/classes', classesRouter)
+app.use('/students', studentsRouter)
+app.use('/reports', reportsRouter)
 app.use('/admin', adminRouter)
 
 // 404 fallthrough — no route leakage

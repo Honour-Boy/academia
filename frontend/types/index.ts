@@ -3,6 +3,8 @@ export type UserRole = 'ADMIN' | 'TEACHER'
 // Nigerian WAEC-style grade letters
 export type GradeLetter = 'A1' | 'B2' | 'B3' | 'C4' | 'C5' | 'C6' | 'D7' | 'E8' | 'F9'
 
+export type BehaviourRating = 'Excellent' | 'Very Good' | 'Good' | 'Fair' | 'Poor'
+
 export interface Profile {
   id: string
   full_name: string
@@ -28,6 +30,7 @@ export interface Subject {
   created_at: string
 }
 
+// Subject-teacher assignment: teacher → class × subject
 export interface TeacherAssignment {
   id: string
   teacher_id: string
@@ -42,6 +45,19 @@ export interface TeacherAssignment {
   profiles?: Pick<Profile, 'id' | 'full_name' | 'email'>
 }
 
+// Class-teacher assignment: teacher → class (owns attendance + remarks)
+export interface ClassTeacherAssignment {
+  id: string
+  teacher_id: string
+  class_id: string
+  term: string
+  academic_year: string
+  created_at: string
+  // joined
+  classes?: Class
+  profiles?: Pick<Profile, 'id' | 'full_name' | 'email'>
+}
+
 export interface Student {
   id: string
   full_name: string
@@ -49,6 +65,35 @@ export interface Student {
   class_id: string
   is_active: boolean
   created_at: string
+  // joined
+  classes?: Class
+}
+
+// Which subjects a student is enrolled in
+export interface StudentSubject {
+  id: string
+  student_id: string
+  subject_id: string
+  created_at: string
+  subjects?: Subject
+}
+
+// Class-teacher-owned record per student per term
+export interface StudentRemark {
+  id: string
+  student_id: string
+  class_id: string
+  entered_by: string | null
+  term: string
+  academic_year: string
+  times_present: number
+  times_absent: number
+  times_late: number
+  behaviour_rating: BehaviourRating | null
+  teacher_remark: string | null
+  principal_remark: string | null
+  created_at: string
+  updated_at: string
 }
 
 export interface ScoreComponent {
@@ -100,4 +145,24 @@ export interface AdminStats {
   totalClasses: number
   totalStudents: number
   totalGradesEntered: number
+}
+
+// Full student report data for PDF generation
+export interface StudentReportData {
+  student: Student
+  class: Class
+  classTeacher: Pick<Profile, 'id' | 'full_name'> | null
+  term: string
+  academicYear: string
+  subjects: Array<{
+    subject: Subject
+    components: Array<{ component: ScoreComponent; score: number | null }>
+    total: number
+    percentage: number
+    gradeLetter: GradeLetter
+  }>
+  remark: StudentRemark | null
+  overallTotal: number
+  overallPercentage: number
+  position: number | null // position in class (computed at report time)
 }
