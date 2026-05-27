@@ -1,6 +1,21 @@
-import { createServerClient, type CookieOptions } from '@supabase/ssr'
+import { createServerClient } from '@supabase/ssr'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
+
+// Inline cookie-options type — avoids relying on @supabase/ssr's CookieOptions
+// re-export which varies across patch versions. Covers every field that
+// Next.js's cookieStore.set() actually accepts.
+type CookieSetOptions = {
+  path?: string
+  domain?: string
+  maxAge?: number
+  expires?: Date
+  httpOnly?: boolean
+  secure?: boolean
+  sameSite?: 'strict' | 'lax' | 'none' | boolean
+  priority?: 'low' | 'medium' | 'high'
+  partitioned?: boolean
+}
 
 /**
  * SSR Supabase client — scoped to the current user's session.
@@ -17,14 +32,14 @@ export async function createClient() {
         getAll() {
           return cookieStore.getAll()
         },
-        setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
+        setAll(cookiesToSet: { name: string; value: string; options: CookieSetOptions }[]) {
           try {
             cookiesToSet.forEach(({ name, value, options }) =>
               cookieStore.set(name, value, options),
             )
           } catch {
             // Called from a Server Component — safe to ignore.
-            // Middleware keeps the session alive via its own setAll.
+            // The middleware refreshes the session via its own setAll.
           }
         },
       },
