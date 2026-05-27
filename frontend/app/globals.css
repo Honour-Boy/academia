@@ -1,0 +1,81 @@
+@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --brand: #22C55E;
+    --sidebar: #0F172A;
+  }
+
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html {
+    /* Prevent iOS zoom on input focus */
+    font-size: 16px;
+  }
+
+  body {
+    @apply bg-surface-muted text-ink font-sans antialiased;
+  }
+
+  /* Score inputs — mono font, large hit area */
+  input[type='number'].score-input {
+    @apply font-mono text-center;
+    /* Remove spinners */
+    -moz-appearance: textfield;
+  }
+  input[type='number'].score-input::-webkit-outer-spin-button,
+  input[type='number'].score-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+}
+
+@layer components {
+  /* Touch-safe button base */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2
+           min-h-touch px-5 py-3 rounded-lg font-medium text-sm
+           cursor-pointer select-none transition-all duration-150
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-brand text-white hover:bg-brand-dark active:scale-95;
+  }
+  .btn-secondary {
+    @apply btn bg-white text-ink border border-surface-border hover:bg-surface-muted active:scale-95;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent text-ink-muted hover:bg-surface-muted active:scale-95;
+  }
+  .btn-danger {
+    @apply btn bg-red-500 text-white hover:bg-red-600 active:scale-95;
+  }
+
+  /* Card */
+  .card {
+    @apply bg-white rounded-xl border border-surface-border shadow-sm;
+  }
+
+  /* Touch-safe input */
+  .input {
+    @apply w-full min-h-touch px-4 py-3 rounded-lg border border-surface-border
+           bg-white text-ink text-base
+           placeholder:text-ink-subtle
+           focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent
+           transition-all duration-150
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* Grade badge */
+  .grade-badge {
+    @apply inline-flex items-center justify-center
+           w-10 h-7 rounded border font-mono text-xs font-semibold;
+  }
+}
