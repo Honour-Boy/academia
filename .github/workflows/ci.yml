@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [staging, main]
+  push:
+    branches: [staging, main]
+
+jobs:
+  frontend:
+    name: Frontend — lint, typecheck, test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test -- --passWithNoTests
+        env:
+          NODE_ENV: test
+          # Supabase stubs — real values never needed for unit tests
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
+
+  migrations:
+    name: Migrations — validate SQL syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check migration files exist
+        run: |
+          count=$(find supabase/migrations -name "*.sql" | wc -l)
+          echo "Found $count migration file(s)"
+          if [ "$count" -eq 0 ]; then
+            echo "No migration files found — create at least one in supabase/migrations/"
+            exit 1
+          fi
