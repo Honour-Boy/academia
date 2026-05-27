@@ -4,13 +4,14 @@
 -- Students have NO role, NO auth user, and see ZERO rows via RLS.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- gen_random_uuid() is built-in from Postgres 13+ (no extension needed)
+-- uuid-ossp kept only for compatibility; gen_random_uuid() not used
 
 -- ─── Tables ───────────────────────────────────────────────────────────────────
 
 -- 1. Profiles (extends auth.users, holds role)
 CREATE TABLE profiles (
-  id          UUID        PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  id          UUID        PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE, -- no default; comes from auth.users
   full_name   TEXT        NOT NULL,
   email       TEXT        NOT NULL UNIQUE,
   role        TEXT        NOT NULL DEFAULT 'TEACHER' CHECK (role IN ('ADMIN','TEACHER')),
@@ -21,7 +22,7 @@ CREATE TABLE profiles (
 
 -- 2. Classes  e.g. "JSS 2A", "SS 3B"
 CREATE TABLE classes (
-  id          UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   name        TEXT        NOT NULL,     -- display name e.g. "JSS 2A"
   level       TEXT        NOT NULL,     -- "JSS" | "SS"
   arm         TEXT        NOT NULL DEFAULT 'A',
@@ -31,14 +32,14 @@ CREATE TABLE classes (
 
 -- 3. Subjects
 CREATE TABLE subjects (
-  id          UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   name        TEXT        NOT NULL UNIQUE,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- 4. Teacher ↔ Class + Subject assignments (admin-managed)
 CREATE TABLE teacher_assignments (
-  id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   teacher_id     UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   class_id       UUID NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
   subject_id     UUID NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
@@ -50,7 +51,7 @@ CREATE TABLE teacher_assignments (
 
 -- 5. Students (metadata only — never granted auth access)
 CREATE TABLE students (
-  id              UUID    PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id              UUID    PRIMARY KEY DEFAULT gen_random_uuid(),
   full_name       TEXT    NOT NULL,
   student_number  TEXT    UNIQUE,
   class_id        UUID    NOT NULL REFERENCES classes(id) ON DELETE RESTRICT,
@@ -60,7 +61,7 @@ CREATE TABLE students (
 
 -- 6. Score components  CA1=20pts, CA2=20pts, Exam=60pts
 CREATE TABLE score_components (
-  id                UUID    PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id                UUID    PRIMARY KEY DEFAULT gen_random_uuid(),
   name              TEXT    NOT NULL,
   max_score         INTEGER NOT NULL CHECK (max_score > 0),
   weight_percentage INTEGER NOT NULL CHECK (weight_percentage > 0 AND weight_percentage <= 100),
@@ -75,7 +76,7 @@ INSERT INTO score_components (name, max_score, weight_percentage, sort_order) VA
 
 -- 7. Grades — maximum RLS protection
 CREATE TABLE grades (
-  id            UUID         PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id            UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
   student_id    UUID         NOT NULL REFERENCES students(id) ON DELETE CASCADE,
   subject_id    UUID         NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
   class_id      UUID         NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
@@ -91,7 +92,7 @@ CREATE TABLE grades (
 
 -- 8. Audit log — immutable from client; only triggers write here
 CREATE TABLE grade_audit_log (
-  id               UUID         PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id               UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
   grade_id         UUID         NOT NULL REFERENCES grades(id) ON DELETE CASCADE,
   changed_by       UUID         REFERENCES profiles(id) ON DELETE SET NULL,
   changed_by_name  TEXT,        -- denormalized — preserved if profile later deleted
