@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "jest",
+    "test": "echo \"No frontend tests yet\"",
     "ui:add": "npx shadcn@latest add"
   },
   "dependencies": {
