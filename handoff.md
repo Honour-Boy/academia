@@ -2,64 +2,236 @@
 
 _Last updated: 2026-05-27_
 
+---
+
 ## Goal
 
-Build **Academia** — a secure, mobile-first grading platform for teachers and school admins. Students are completely locked out at every layer: the database (Supabase RLS rejects any JWT without a `TEACHER` or `ADMIN` role claim), the API (Server Actions require a valid session + role check), and the frontend (no student-facing routes exist). Teachers enter and manage grades for their own classes. Admins manage teachers, classes, and generate reports. UI is phone-first — grade entry is comfortable on mobile.
+**Academia** — a secure, mobile-first grading platform for Nigerian secondary schools.
+Students are locked out at every layer (DB RLS, API, frontend). Two distinct teacher roles (Subject Teacher, Class Teacher) each have scoped access. Admins manage everything.
 
-## Current State
+---
 
-**Full starting codebase written.** Ready for `npm install` and Supabase project setup.
+## Architecture
 
-### What exists now
+```
+academia/
+├── frontend/         Next.js 14 App Router + Supabase SSR + Tailwind + shadcn/ui
+├── backend/          Express 4 + TypeScript (PDF generation, ZIP export, REST API)
+├── supabase/
+│   └── migrations/   Applied via supabase db push
+└── render.yaml       Two Render services (prod + staging), autoDeploy: false
+```
 
-| Path | What it does |
-|------|-------------|
-| `supabase/migrations/001_initial_schema.sql` | Complete DB schema, RLS policies, audit triggers |
-| `frontend/` | Complete Next.js 14 App Router project |
-| `frontend/middleware.ts` | Auth gate — unauthed requests → `/login` |
-| `frontend/app/(auth)/login/` | Login page + Server Action |
-| `frontend/app/(app)/layout.tsx` | Protected layout, deactivated-user guard |
-| `frontend/app/(app)/dashboard/` | Teacher dashboard — class/subject assignment cards with progress bars |
-| `frontend/app/(app)/grades/[classId]/[subjectId]/` | Grade entry: component tabs, auto-save on blur, offline draft in localStorage, Enter-key advances to next student |
-| `frontend/app/(app)/reports/[studentId]/` | Student report sheet — all subjects, totals, percentages, WAEC grade letters |
-| `frontend/app/(app)/admin/` | Admin dashboard with stats + quick-action links |
-| `frontend/app/(app)/admin/teachers/` | Teacher list + deactivate/reactivate |
-| `frontend/app/(app)/admin/teachers/new/` | Add teacher form (uses Supabase Admin API — no self-registration) |
-| `frontend/components/grades/GradeEntryList.tsx` | Touch-friendly mobile grade entry with per-cell auto-save, validation, offline draft |
-| `frontend/components/dashboard/ClassSubjectCard.tsx` | Assignment card with progress bar |
-| `frontend/components/ui/NavBar.tsx` | Dark sidebar navbar |
-| `frontend/components/ui/OfflineBanner.tsx` | "You're offline" amber banner |
-| `frontend/lib/grade-utils.ts` | WAEC grade letter calc, class stats, score validation, term helpers |
-| `frontend/lib/supabase/client.ts` + `server.ts` | Supabase SSR clients |
+**Hosting**
+- Frontend → Vercel (production=main, preview=staging)
+- Backend  → Render (academia-backend=main, academia-backend-staging=staging)
+- Both deploy only after the `deploy-gate` CI job passes
 
-### Pages still to build (admin flows)
-- `/admin/classes` — create/edit classes
-- `/admin/students` — enroll students, edit class assignment
-- `/admin/assignments` — assign teacher ↔ class ↔ subject
-- `/admin/reports` — admin view of all report sheets
-- `/admin/audit` — grade audit log viewer
+**Live Supabase project**: `https://kjjadbwhjiyjhdwnijwf.supabase.co`
+
+---
+
+## Database Schema (as of migration 003)
+
+### Tables
+
+| Table | Purpose |
+|---|---|
+| `profiles` | Extends `auth.users`; holds `role` (ADMIN \| TEACHER) and `is_active` |
+| `classes` | JSS/SS arms e.g. "JSS 2A" |
+| `subjects` | Subject catalogue (13 seeded on migration 001) |
+| `teacher_assignments` | Subject teacher → class × subject (per term/year) |
+| `class_teacher_assignments` | **NEW** Class teacher → class (one per class per term/year) |
+| `students` | Student metadata only — no auth account |
+| `student_subjects` | **NEW** Which subjects each student is enrolled in |
+| `score_components` | CA1=20, CA2=20, Exam=60 |
+| `grades` | Score per student × subject × component × term/year |
+| `grade_audit_log` | Immutable log of every grade INSERT/UPDATE |
+| `student_remarks` | **NEW** Class-teacher-owned: attendance + behaviour + remarks per term |
+
+### Key Relationships
+```
+profiles (TEACHER) ──┬── teacher_assignments ──── classes × subjects
+                     └── class_teacher_assignments ── classes
+
+students ──── class_id ──── classes
+students ──── student_subjects ──── subjects
+students ──── student_remarks (entered by class teacher)
+students ──── grades (entered by subject teachers)
+```
+
+### RLS Rules (summary)
+- `grades`: subject teacher can read/write only for their assigned class+subject
+- `student_remarks`: class teacher can write only for their assigned class
+- `student_subjects`: ADMIN writes; TEACHER reads
+- `grade_audit_log`: ADMIN full access; TEACHER reads own entries only
+- No `anon` or unroled access on any grade-related table — ever
+
+---
+
+## Role Workflows
+
+### ADMIN
+- Create/deactivate teacher accounts (via Supabase Admin API, no self-reg)
+- Create classes
+- Assign class teachers → `/admin/classes`
+- Assign subject teachers → `/admin/assignments`
+- Enroll students + select subject offerings → `/admin/students/new`
+- Edit student enrolment → `/admin/students/[id]`
+- Download PDF report sheets & bulk ZIP → `/admin/reports`
+- View grade audit log
+
+### Subject Teacher
+- Dashboard shows their subject assignment cards
+- Grade entry (`/grades/[classId]/[subjectId]`):
+  - Sees **only** students enrolled in that specific subject (via `student_subjects`)
+  - Falls back to all class students if no enrolment records yet (backward compat)
+  - Can edit scores only for their subject column
+
+### Class Teacher
+- Dashboard shows a blue "Class Teacher" card for their class
+- Class Teacher Sheet (`/class-teacher/[classId]`):
+  - Attendance: times present / absent / late
+  - Behaviour rating: Excellent → Poor
+  - Free-text remark (max 500 chars)
+  - **Cannot see or edit any subject scores**
+
+---
+
+## Pages
+
+| Route | Who | What |
+|---|---|---|
+| `/login` | All | Supabase email/password sign-in |
+| `/dashboard` | ALL | Subject cards + Class Teacher cards |
+| `/grades/[classId]/[subjectId]` | TEACHER / ADMIN | Score entry, filtered by subject enrolment |
+| `/class-teacher/[classId]` | Class Teacher / ADMIN | Attendance, behaviour, remarks |
+| `/reports/[studentId]` | ADMIN | Student report sheet preview |
+| `/admin` | ADMIN | Dashboard: stats + quick actions |
+| `/admin/teachers` | ADMIN | List, deactivate/reactivate |
+| `/admin/teachers/new` | ADMIN | Create teacher account |
+| `/admin/classes` | ADMIN | Assign class teachers per arm |
+| `/admin/students` | ADMIN | List all students |
+| `/admin/students/new` | ADMIN | Enroll student + select subjects |
+| `/admin/students/[id]` | ADMIN | Edit student details + subjects |
+
+---
+
+## Backend API
+
+Base URL set via `NEXT_PUBLIC_BACKEND_URL` env var.
+
+| Method + Path | Auth | Purpose |
+|---|---|---|
+| `GET /health` | None | Render health check |
+| `GET /grades?classId=&subjectId=` | TEACHER/ADMIN | List grades |
+| `PUT /grades/:id` | TEACHER/ADMIN | Update grade (teacher-scoped) |
+| `GET /classes` | TEACHER/ADMIN | List classes (teacher sees own) |
+| `POST /classes` | ADMIN | Create class |
+| `GET /students?classId=&subjectId=` | TEACHER/ADMIN | List students |
+| `POST /students` | ADMIN | Enrol student + subjects |
+| `PATCH /students/:id` | ADMIN | Update student |
+| `PUT /students/:id/subjects` | ADMIN | Replace subject enrolment |
+| `GET /reports/student/:id?term=&year=` | ADMIN | Stream single PDF |
+| `POST /reports/bulk` | ADMIN | Stream ZIP of multiple PDFs |
+| `GET /admin/teachers` | ADMIN | List teachers |
+| `POST /admin/teachers` | ADMIN | Create teacher |
+| `PATCH /admin/teachers/:id/deactivate` | ADMIN | Deactivate |
+| `GET /admin/assignments` | ADMIN | List subject assignments |
+| `POST /admin/assignments` | ADMIN | Create subject assignment |
+| `DELETE /admin/assignments/:id` | ADMIN | Remove assignment |
+| `GET /admin/audit` | ADMIN | Grade audit log |
+
+---
+
+## Template / PDF System
+
+- `backend/src/templates/types.ts` — `TemplateField`, `TemplateSection`, `KNOWN_FIELD_KEYS`
+- `backend/src/templates/parser.ts` — Sanitises any template object; unknown keys are omitted without crashing; `defaultTemplate()` used when no custom template provided
+- `backend/src/templates/generator.ts` — pdfkit-based PDF; sections: student info, subject scores table, overall, attendance, remarks, footer
+- `POST /reports/bulk` — collects all PDFs into a `archiver` ZIP; each file named `First_Last_Report_Sheet.pdf`
+
+To use a school-specific template: place a `ReportTemplate`-shaped JSON in the request body or load it from a file, pass through `parseTemplate()` first, then to `streamReportPDF()`.
+
+---
+
+## Environment Variables
+
+### Frontend (Vercel)
+```
+NEXT_PUBLIC_SUPABASE_URL
+NEXT_PUBLIC_SUPABASE_ANON_KEY
+SUPABASE_SERVICE_ROLE_KEY        ← sensitive, server-side only
+NEXT_PUBLIC_BACKEND_URL          ← Render service URL
+NEXT_PUBLIC_APP_NAME
+NEXT_PUBLIC_SCHOOL_NAME
+```
+
+### Backend (Render)
+```
+SUPABASE_URL
+SUPABASE_SERVICE_ROLE_KEY
+SUPABASE_JWT_SECRET
+FRONTEND_ORIGIN                  ← comma-separated Vercel URLs for CORS
+NODE_ENV
+PORT
+SCHOOL_NAME                      ← appears on PDF header
+```
+
+---
+
+## CI / Deploy
+
+```
+push to staging → CI (frontend · backend · migrations · deploy-gate) → Vercel preview + Render staging
+push to main    → same CI → Vercel production + Render production
+PR              → CI only (no deploy)
+```
+
+GitHub Secrets needed (one-time setup):
+- `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`
+- `RENDER_DEPLOY_HOOK_PROD`, `RENDER_DEPLOY_HOOK_STAGING`
+
+---
+
+## Pending Tasks
+
+### Must-do before first real use
+- [ ] Run `supabase db push` to apply migration 003 (student_subjects, class_teacher_assignments, student_remarks)
+- [ ] Set `SCHOOL_NAME` env var in Render (shows on PDF header)
+- [ ] Enroll existing students via `/admin/students/new` with their subject selections
+- [ ] Assign class teachers in `/admin/classes`
+- [ ] Test PDF download: `/reports/student/:id?term=First+Term&year=2025/2026`
+- [ ] Add `<Toaster />` from sonner to `frontend/app/layout.tsx`
+
+### Admin pages still to build
+- [ ] `/admin/assignments` — subject teacher assignment UI (currently backend API exists, no UI)
+- [ ] `/admin/reports` — admin view with download buttons per student
+- [ ] `/admin/audit` — grade audit log viewer
+
+### Enhancements
+- [ ] Upload a custom school PDF template → store as JSON in DB or file, pass to `parseTemplate()` before generating
+- [ ] Principal remark field on admin report view (currently only class teacher remark is writable via UI)
+- [ ] Position in class (rank) — compute at bulk report generation time, write back to `student_remarks`
+- [ ] Export CSV of all grades (admin-only)
+- [ ] `npm run dev` local test end-to-end (install deps first: `cd frontend && npm install`)
+- [ ] Commit `frontend/package-lock.json` and switch Vercel back to `npm ci`
+
+---
 
 ## Files in Flight
 
-None — initial build complete, nothing uncommitted.
+None — all changes committed on main + staging.
+
+---
 
 ## Recent Changes
 
-- 2026-05-27 — Full starting codebase generated. DB migration, all core pages, grade entry component, admin panel foundation.
-
-## Failed / Not Working
-
-None yet — not yet wired to a live Supabase project.
-
-## Next Steps
-
-1. **Supabase project** — Create project at app.supabase.com, run `supabase db push` with the migration
-2. **Environment** — Copy `frontend/.env.example` → `frontend/.env.local`, fill in `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
-3. **Install deps** — `cd frontend && npm install`
-4. **Create first admin** — In Supabase dashboard → Authentication → Users → "Invite user", then manually set `role = 'ADMIN'` in the `profiles` table
-5. **Test auth** — `npm run dev`, log in as admin, verify teacher login is blocked without account
-6. **Build remaining admin pages** — Classes, Students, Assignments (see list above)
-7. **Add sonner toast provider** — wrap `app/layout.tsx` with `<Toaster />` from `sonner`
-8. **shadcn/ui init** — `npm run ui:add button input badge card table` for the component primitives
-9. **Report template** — You'll provide the school report sheet layout; map it onto `/reports/[studentId]/page.tsx`
-10. **Deploy** — Vercel for frontend, ensure `SUPABASE_SERVICE_ROLE_KEY` is in Vercel env (not public)
+| Date | What |
+|---|---|
+| 2026-05-27 | Supabase project created, migrations 001+002 applied, admin user created |
+| 2026-05-27 | Vercel + Render deploy config; CI-driven deploy gates |
+| 2026-05-27 | Migration 003: student_subjects, class_teacher_assignments, student_remarks |
+| 2026-05-27 | Student enrolment UI (admin), Class Teacher daily sheet, PDF + ZIP export |
+| 2026-05-27 | Dashboard: Class Teacher cards + Subject Teacher cards differentiated |
+| 2026-05-27 | Grade entry: filters by student_subjects enrollment |
