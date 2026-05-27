@@ -1,6 +1,6 @@
 # Handoff
 
-_Last updated: 2026-05-27_
+_Last updated: 2026-05-28_
 
 ---
 
@@ -114,6 +114,9 @@ students ──── grades (entered by subject teachers)
 | `/admin/students` | ADMIN | List all students |
 | `/admin/students/new` | ADMIN | Enroll student + select subjects |
 | `/admin/students/[id]` | ADMIN | Edit student details + subjects |
+| `/admin/assignments` | ADMIN | Assign subject teachers → class × subject |
+| `/admin/reports` | ADMIN | Students by class; preview + download PDF report |
+| `/admin/audit` | ADMIN | Read-only grade audit log (last 200) |
 
 ---
 
@@ -197,17 +200,18 @@ GitHub Secrets needed (one-time setup):
 ## Pending Tasks
 
 ### Must-do before first real use
-- [ ] Run `supabase db push` to apply migration 003 (student_subjects, class_teacher_assignments, student_remarks)
-- [ ] Set `SCHOOL_NAME` env var in Render (shows on PDF header)
-- [ ] Enroll existing students via `/admin/students/new` with their subject selections
-- [ ] Assign class teachers in `/admin/classes`
+- [x] Run `supabase db push` to apply migration 003 — applied 2026-05-28 (003 now Local+Remote)
+- [ ] Set `SCHOOL_NAME` env var in Render (shows on PDF header) — **user action**
+- [ ] Set `NEXT_PUBLIC_BACKEND_URL` in Vercel — required for `/admin/reports` PDF download to work
+- [ ] Enroll existing students via `/admin/students/new` with their subject selections — **user action**
+- [ ] Assign class teachers in `/admin/classes`, subject teachers in `/admin/assignments` — **user action**
 - [ ] Test PDF download: `/reports/student/:id?term=First+Term&year=2025/2026`
-- [ ] Add `<Toaster />` from sonner to `frontend/app/layout.tsx`
+- [x] Add `<Toaster />` from sonner to `frontend/app/layout.tsx` — added (top-center, richColors)
 
 ### Admin pages still to build
-- [ ] `/admin/assignments` — subject teacher assignment UI (currently backend API exists, no UI)
-- [ ] `/admin/reports` — admin view with download buttons per student
-- [ ] `/admin/audit` — grade audit log viewer
+- [x] `/admin/assignments` — subject teacher assignment UI (Supabase-direct + server actions)
+- [x] `/admin/reports` — students by class, term/year filter, preview link + authed PDF download
+- [x] `/admin/audit` — read-only grade audit log viewer (last 200, enriched with student/subject)
 
 ### Enhancements
 - [ ] Upload a custom school PDF template → store as JSON in DB or file, pass to `parseTemplate()` before generating
@@ -229,6 +233,7 @@ None — all changes committed on main + staging.
 
 | Date | What |
 |---|---|
+| 2026-05-28 | Migration 003 pushed to live Supabase; built `/admin/assignments`, `/admin/reports`, `/admin/audit`; added sonner Toaster; frontend tsc + lint clean |
 | 2026-05-27 | Supabase project created, migrations 001+002 applied, admin user created |
 | 2026-05-27 | Vercel + Render deploy config; CI-driven deploy gates |
 | 2026-05-27 | Migration 003: student_subjects, class_teacher_assignments, student_remarks |

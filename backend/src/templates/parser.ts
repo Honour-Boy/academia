@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto'
 import type { ReportTemplate, TemplateField } from './types'
 import { KNOWN_FIELD_KEYS } from './types'
 
@@ -77,7 +78,7 @@ export function parseTemplate(raw: unknown): ParseResult {
       }
 
       return {
-        id: typeof section.id === 'string' ? section.id : crypto.randomUUID(),
+        id: typeof section.id === 'string' ? section.id : randomUUID(),
         title: typeof section.title === 'string' ? section.title : 'Section',
         fields: knownFields,
         omitIfEmpty: section.omitIfEmpty === true,
