@@ -3,9 +3,12 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { CalendarDays, Loader2, Save } from 'lucide-react'
+import { CalendarDays, Loader2, Save, ArrowRight, Copy, SkipForward } from 'lucide-react'
 import { TERMS, type Term } from '@/lib/grade-utils'
-import { updateSchoolSettingsAction } from './actions'
+import {
+  Dialog, DialogContent, DialogTitle, DialogDescription, DialogFooter, DialogClose,
+} from '@/components/ui/Dialog'
+import { copyTermAssignmentsAction, updateSchoolSettingsAction } from './actions'
 
 interface Props {
   initialTerm: Term
@@ -23,103 +26,213 @@ export default function SettingsForm({
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
 
+  // Modal state for the "save flow" decision tree.
+  const [showTermModal, setShowTermModal] = useState(false)
+  const [showYearModal, setShowYearModal] = useState(false)
+
   const dirty = term !== initialTerm || year !== initialYear
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setError(null)
-    const fd = new FormData(e.currentTarget)
+    const termChanged = term !== initialTerm
+    const yearChanged = year !== initialYear
+
+    if (!termChanged && !yearChanged) {
+      toast.info('No changes to save')
+      return
+    }
+
+    // Year change is the bigger deal — always wins over a term-only modal.
+    if (yearChanged) {
+      setShowYearModal(true)
+      return
+    }
+    if (termChanged) {
+      setShowTermModal(true)
+      return
+    }
+  }
+
+  /** Term-only save path. Optionally copies staffing from the old term. */
+  function commitTermChange(copyStaffing: boolean) {
     startTransition(async () => {
+      const fd = new FormData()
+      fd.set('current_term', term)
+      fd.set('current_academic_year', year)
       const result = await updateSchoolSettingsAction(fd)
       if ('error' in result) {
         setError(result.error)
+        setShowTermModal(false)
         return
       }
-      if (!result.changed.term && !result.changed.year) {
-        toast.info('No changes to save')
-        return
+      if (copyStaffing) {
+        const copyResult = await copyTermAssignmentsAction({
+          fromTerm: initialTerm,
+          toTerm: term,
+          academicYear: year,
+        })
+        if ('error' in copyResult) {
+          toast.error(copyResult.error)
+        } else {
+          const total = copyResult.copiedSubject + copyResult.copiedClassTeacher
+          toast.success(
+            total > 0
+              ? `Term updated · ${copyResult.copiedSubject} subject and ${copyResult.copiedClassTeacher} class-teacher assignments copied`
+              : `Term updated · nothing to copy (no prior assignments for ${initialTerm})`,
+          )
+        }
+      } else {
+        toast.success(`Term changed to ${term}. Staffing for ${term} starts empty.`)
       }
-      const bits: string[] = []
-      if (result.changed.term) bits.push('term')
-      if (result.changed.year) bits.push('academic year')
-      toast.success(`Updated ${bits.join(' and ')}`)
+      setShowTermModal(false)
       router.refresh()
     })
   }
 
+  /** Year-change save path. Routes to the wizard, which commits the year on apply. */
+  function commitYearChange() {
+    const params = new URLSearchParams({
+      newYear: year,
+      ...(term !== initialTerm ? { newTerm: term } : {}),
+    })
+    setShowYearModal(false)
+    router.push(`/admin/year-rollover?${params.toString()}`)
+  }
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
-      {error && (
-        <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
-
-      <div className="grid sm:grid-cols-2 gap-4">
-        <div>
-          <label htmlFor="current_term" className="label">Current term</label>
-          <select
-            id="current_term"
-            name="current_term"
-            value={term}
-            onChange={(e) => setTerm(e.target.value as Term)}
-            className="input mt-1"
-          >
-            {TERMS.map((t) => (
-              <option key={t} value={t}>{t}</option>
-            ))}
-          </select>
-          <p className="text-xs text-ink-subtle mt-1">
-            Drives every screen that shows grades, attendance, and assignments.
-          </p>
-        </div>
-
-        <div>
-          <label htmlFor="current_academic_year" className="label">Academic year</label>
-          <input
-            id="current_academic_year"
-            name="current_academic_year"
-            type="text"
-            inputMode="numeric"
-            placeholder="2025/2026"
-            value={year}
-            onChange={(e) => setYear(e.target.value)}
-            className="input mt-1 font-mono"
-          />
-          <p className="text-xs text-ink-subtle mt-1">
-            Format <span className="font-mono">YYYY/YYYY</span> with consecutive years.
-          </p>
-        </div>
-      </div>
-
-      {lastUpdatedAt && (
-        <p className="text-xs text-ink-subtle inline-flex items-center gap-1.5">
-          <CalendarDays className="w-3 h-3" />
-          Last updated {new Date(lastUpdatedAt).toLocaleString()}
-          {lastUpdatedBy && <> by <span className="font-medium text-ink">{lastUpdatedBy}</span></>}
-        </p>
-      )}
-
-      <div className="flex items-center gap-3 pt-2 border-t border-surface-border">
-        <button
-          type="submit"
-          disabled={pending || !dirty}
-          className="btn-brand disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {pending
-            ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>
-            : <><Save className="w-4 h-4" /> Save changes</>}
-        </button>
-        {dirty && !pending && (
-          <button
-            type="button"
-            onClick={() => { setTerm(initialTerm); setYear(initialYear); setError(null) }}
-            className="text-sm text-ink-muted hover:text-ink cursor-pointer"
-          >
-            Reset
-          </button>
+    <>
+      <form onSubmit={handleSubmit} className="space-y-5">
+        {error && (
+          <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+            {error}
+          </div>
         )}
-      </div>
-    </form>
+
+        <div className="grid sm:grid-cols-2 gap-4">
+          <div>
+            <label htmlFor="current_term" className="label">Current term</label>
+            <select
+              id="current_term"
+              name="current_term"
+              value={term}
+              onChange={(e) => setTerm(e.target.value as Term)}
+              className="input mt-1"
+            >
+              {TERMS.map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+            <p className="text-xs text-ink-subtle mt-1">
+              Changing the term will offer to copy teacher staffing forward.
+            </p>
+          </div>
+
+          <div>
+            <label htmlFor="current_academic_year" className="label">Academic year</label>
+            <input
+              id="current_academic_year"
+              name="current_academic_year"
+              type="text"
+              inputMode="numeric"
+              placeholder="2025/2026"
+              value={year}
+              onChange={(e) => setYear(e.target.value)}
+              className="input mt-1 font-mono"
+            />
+            <p className="text-xs text-ink-subtle mt-1">
+              Changing the year opens the promotion wizard.
+            </p>
+          </div>
+        </div>
+
+        {lastUpdatedAt && (
+          <p className="text-xs text-ink-subtle inline-flex items-center gap-1.5">
+            <CalendarDays className="w-3 h-3" />
+            Last updated {new Date(lastUpdatedAt).toLocaleString()}
+            {lastUpdatedBy && <> by <span className="font-medium text-ink">{lastUpdatedBy}</span></>}
+          </p>
+        )}
+
+        <div className="flex items-center gap-3 pt-2 border-t border-surface-border">
+          <button
+            type="submit"
+            disabled={pending || !dirty}
+            className="btn-brand disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {pending
+              ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>
+              : <><Save className="w-4 h-4" /> Save changes</>}
+          </button>
+          {dirty && !pending && (
+            <button
+              type="button"
+              onClick={() => { setTerm(initialTerm); setYear(initialYear); setError(null) }}
+              className="text-sm text-ink-muted hover:text-ink cursor-pointer"
+            >
+              Reset
+            </button>
+          )}
+        </div>
+      </form>
+
+      {/* Term-change modal: ask to carry staffing */}
+      <Dialog open={showTermModal} onOpenChange={setShowTermModal}>
+        <DialogContent showClose={!pending}>
+          <DialogTitle>Carry staffing from {initialTerm} to {term}?</DialogTitle>
+          <DialogDescription className="mt-2 space-y-2 block">
+            Subject teacher assignments and class teacher assignments can be copied over so
+            the same teachers stay attached to the same classes for {term} &middot; {year}.
+            Grades are always per-term and start fresh either way.
+          </DialogDescription>
+          <DialogFooter>
+            <DialogClose className="btn-oauth" disabled={pending}>Cancel</DialogClose>
+            <button
+              type="button"
+              onClick={() => commitTermChange(false)}
+              disabled={pending}
+              className="btn-oauth inline-flex items-center gap-1.5"
+            >
+              <SkipForward className="w-4 h-4" /> Skip &mdash; start empty
+            </button>
+            <button
+              type="button"
+              onClick={() => commitTermChange(true)}
+              disabled={pending}
+              className="btn-brand inline-flex items-center gap-1.5"
+            >
+              {pending
+                ? <Loader2 className="w-4 h-4 animate-spin" />
+                : <><Copy className="w-4 h-4" /> Copy &amp; save</>}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Year-change modal: route to promotion wizard */}
+      <Dialog open={showYearModal} onOpenChange={setShowYearModal}>
+        <DialogContent showClose={!pending}>
+          <DialogTitle>Roll over to academic year {year}?</DialogTitle>
+          <DialogDescription className="mt-2 space-y-2 block">
+            A year rollover is a fresh start: subject and class-teacher
+            assignments do not carry into the new year, and students need to
+            be promoted to their next class. The next screen lists every
+            active student with a suggested promotion. The year change only
+            takes effect once you apply the wizard.
+          </DialogDescription>
+          <DialogFooter>
+            <DialogClose className="btn-oauth" disabled={pending}>Cancel</DialogClose>
+            <button
+              type="button"
+              onClick={commitYearChange}
+              disabled={pending}
+              className="btn-brand inline-flex items-center gap-1.5"
+            >
+              Continue <ArrowRight className="w-4 h-4" />
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
