@@ -5,7 +5,7 @@ import { User, Users } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import type { Class, Subject } from '@/types'
 import EnrollStudentForm from './EnrollStudentForm'
-import RosterPaste from './RosterPaste'
+import RosterImport from './RosterImport'
 
 interface Props {
   classes: (Class & { classTeacherName: string | null })[]
@@ -24,7 +24,7 @@ export default function EnrollTabs({ classes, subjects, defaultTerm, defaultYear
           Single student
         </TabButton>
         <TabButton active={tab === 'bulk'} onClick={() => setTab('bulk')} icon={Users}>
-          Paste roster
+          Bulk import
         </TabButton>
       </div>
 
@@ -36,7 +36,7 @@ export default function EnrollTabs({ classes, subjects, defaultTerm, defaultYear
           defaultYear={defaultYear}
         />
       ) : (
-        <RosterPaste classes={classes} subjects={subjects} />
+        <RosterImport classes={classes} subjects={subjects} />
       )}
     </div>
   )

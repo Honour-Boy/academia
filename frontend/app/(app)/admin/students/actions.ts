@@ -107,12 +107,17 @@ export async function setStudentActiveAction(studentId: string, isActive: boolea
   return { success: true }
 }
 
-// ── Bulk enroll (paste roster) ────────────────────────────────────────────────
+// ── Bulk enroll (per-row class + subjects) ────────────────────────────────────
 
-export async function bulkEnrollStudentsAction(input: {
+export interface BulkEnrollRow {
+  fullName: string
+  studentNumber: string | null
   classId: string
   subjectIds: string[]
-  students: Array<{ fullName: string; studentNumber: string | null }>
+}
+
+export async function bulkEnrollStudentsAction(input: {
+  students: BulkEnrollRow[]
 }): Promise<{ enrolled: number; failed: Array<{ fullName: string; reason: string }> }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -122,23 +127,27 @@ export async function bulkEnrollStudentsAction(input: {
   const { data: profile } = await admin.from('profiles').select('role').eq('id', user.id).single()
   if (profile?.role !== 'ADMIN') return { enrolled: 0, failed: input.students.map((s) => ({ fullName: s.fullName, reason: 'Unauthorised' })) }
 
-  const { classId, subjectIds, students } = input
-  if (!classId) return { enrolled: 0, failed: students.map((s) => ({ fullName: s.fullName, reason: 'No class selected' })) }
-  if (subjectIds.length === 0) return { enrolled: 0, failed: students.map((s) => ({ fullName: s.fullName, reason: 'No subjects selected' })) }
-
   let enrolled = 0
   const failed: Array<{ fullName: string; reason: string }> = []
 
-  for (const s of students) {
+  for (const s of input.students) {
     const name = s.fullName.trim()
     if (!name) {
       failed.push({ fullName: s.fullName, reason: 'Empty name' })
       continue
     }
+    if (!s.classId) {
+      failed.push({ fullName: name, reason: 'No class' })
+      continue
+    }
+    if (s.subjectIds.length === 0) {
+      failed.push({ fullName: name, reason: 'No subjects' })
+      continue
+    }
 
     const { data: student, error: studentErr } = await admin
       .from('students')
-      .insert({ full_name: name, student_number: s.studentNumber || null, class_id: classId })
+      .insert({ full_name: name, student_number: s.studentNumber || null, class_id: s.classId })
       .select('id')
       .single()
 
@@ -152,7 +161,7 @@ export async function bulkEnrollStudentsAction(input: {
 
     const { error: subjErr } = await admin
       .from('student_subjects')
-      .insert(subjectIds.map((sid) => ({ student_id: student.id, subject_id: sid })))
+      .insert(s.subjectIds.map((sid) => ({ student_id: student.id, subject_id: sid })))
 
     if (subjErr) {
       await admin.from('students').delete().eq('id', student.id)
