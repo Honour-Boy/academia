@@ -1,6 +1,7 @@
 'use client'
 
 import { useTransition, useState } from 'react'
+import { Combobox } from '@/components/ui/Combobox'
 import { assignClassTeacherAction } from '../students/actions'
 
 interface Props {
@@ -16,6 +17,7 @@ export default function AssignClassTeacherForm({
 }: Props) {
   const [pending, startTransition] = useTransition()
   const [saved, setSaved] = useState(false)
+  const [teacherId, setTeacherId] = useState(currentTeacherId ?? '')
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -33,16 +35,16 @@ export default function AssignClassTeacherForm({
       <input type="hidden" name="term" value={term} />
       <input type="hidden" name="academic_year" value={academicYear} />
 
-      <select
+      <Combobox
         name="teacher_id"
-        defaultValue={currentTeacherId ?? ''}
-        className="input input-sm flex-1 text-sm"
-      >
-        <option value="">— Assign class teacher —</option>
-        {teachers.map((t) => (
-          <option key={t.id} value={t.id}>{t.full_name}</option>
-        ))}
-      </select>
+        className="flex-1"
+        value={teacherId}
+        onChange={setTeacherId}
+        options={teachers.map((t) => ({ value: t.id, label: t.full_name }))}
+        placeholder="— Assign class teacher —"
+        searchPlaceholder="Search teachers…"
+        clearable
+      />
 
       <button
         type="submit"

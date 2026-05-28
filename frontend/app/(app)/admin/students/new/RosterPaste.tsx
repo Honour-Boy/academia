@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Eye, Trash2, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/cn'
+import { Combobox } from '@/components/ui/Combobox'
 import type { Class, Subject } from '@/types'
 import { bulkEnrollStudentsAction } from '../actions'
 
@@ -117,19 +118,18 @@ export default function RosterPaste({ classes, subjects }: Props) {
         <label htmlFor="bulk-class" className="block text-xs font-semibold uppercase tracking-wider text-ink-subtle mb-1.5">
           Class <span className="text-red-500">*</span>
         </label>
-        <select
+        <Combobox
           id="bulk-class"
           value={classId}
-          onChange={(e) => setClassId(e.target.value)}
-          className="input-brand"
-        >
-          <option value="">— Select a class —</option>
-          {classes.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}{c.classTeacherName ? ` — ${c.classTeacherName}` : ''}
-            </option>
-          ))}
-        </select>
+          onChange={setClassId}
+          options={classes.map((c) => ({
+            value: c.id,
+            label: c.name,
+            secondary: c.classTeacherName ? `— ${c.classTeacherName}` : undefined,
+          }))}
+          placeholder="— Select a class —"
+          searchPlaceholder="Search classes…"
+        />
       </div>
 
       <div>
