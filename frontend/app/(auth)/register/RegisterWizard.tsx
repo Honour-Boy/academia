@@ -203,7 +203,12 @@ export default function RegisterWizard({
             <div>
               <label htmlFor="full_name" className="block text-sm font-medium text-ink mb-1.5">Full name</label>
               <input id="full_name" type="text" autoComplete="name" value={fullName}
-                onChange={(e) => setFullName(e.target.value)} placeholder="e.g. Adewale Okonkwo" className="input-brand" />
+                onChange={(e) => setFullName(e.target.value)}
+                placeholder="e.g. Adewale Okonkwo — include a middle name if a colleague shares the same first + last name"
+                className="input-brand" />
+              <p className="text-xs text-ink-subtle mt-1">
+                Must be unique across all staff and students (case-insensitive). Add a middle name to differentiate if needed.
+              </p>
             </div>
             <div>
               <label htmlFor="phone" className="block text-sm font-medium text-ink mb-1.5">Contact number</label>

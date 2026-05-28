@@ -24,7 +24,11 @@ export default function NewTeacherForm() {
       <div>
         <label htmlFor="full_name" className="block text-sm font-medium text-ink mb-1.5">Full name</label>
         <input id="full_name" name="full_name" type="text" required autoComplete="name"
-          placeholder="Mrs. Adewunmi" className="input" disabled={isPending} />
+          placeholder="Adebiyi Ola Tunde — include a middle name if a colleague shares the same first + last name"
+          className="input" disabled={isPending} />
+        <p className="text-xs text-ink-subtle mt-1">
+          Names must be unique across all staff and students (case-insensitive). If a duplicate exists, add a middle name (or initial) to differentiate.
+        </p>
       </div>
       <div>
         <label htmlFor="email" className="block text-sm font-medium text-ink mb-1.5">Email address</label>

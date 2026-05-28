@@ -7,6 +7,10 @@ export interface RosterInputRow {
   studentNumber: string | null
   className: string | null
   subjectsRaw: string[]
+  /** Original line number from the paste (1-indexed). Useful for error messages. */
+  lineNumber?: number
+  /** Parse-time issue: e.g. missing pipes, extra cells. */
+  parseError?: string
 }
 
 export interface ResolvedRow {
@@ -18,6 +22,8 @@ export interface ResolvedRow {
   subjectIds: string[]
   unmatchedClass: string | null
   unmatchedSubjects: string[]
+  lineNumber?: number
+  parseError?: string
 }
 
 export interface Catalogue {
@@ -36,14 +42,34 @@ function buildIndex(rows: { id: string; name: string }[]): Map<string, string> {
 }
 
 // ── Paste parsing ─────────────────────────────────────────────────────────────
-// Accepts pipe-delimited rows: `Name | StudentID | Class | subject1, subject2, …`
-// Falls back to 2-column legacy format (`Name | StudentID`) — those rows land
-// without a class/subjects and get flagged in the preview.
+// Expected format per line (pipe-delimited):
+//   Name | Student ID | Class | subject1, subject2, …
+// Older 2-column rows (Name | Student ID) are still parsed but get a parseError
+// so the admin sees exactly why they can't be submitted.
 export function parsePastedRoster(text: string): RosterInputRow[] {
   const rows: RosterInputRow[] = []
-  for (const raw of text.split(/\r?\n/)) {
+  const lines = text.split(/\r?\n/)
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i]
     const line = raw.trim()
     if (!line) continue
+    const lineNumber = i + 1
+
+    // Surface a clear error when the line wasn't pipe-delimited at all — that's
+    // the #1 cause of confusing "skipped" warnings from earlier versions.
+    if (!line.includes('|')) {
+      rows.push({
+        fullName: line,
+        studentNumber: null,
+        className: null,
+        subjectsRaw: [],
+        lineNumber,
+        parseError:
+          'No pipe (|) characters found — expected: Name | Student ID | Class | subject1, subject2',
+      })
+      continue
+    }
+
     const cells = line.split('|').map((c) => c.trim())
     const fullName = cells[0] ?? ''
     const studentNumber = (cells[1] && cells[1].length > 0) ? cells[1] : null
@@ -51,8 +77,34 @@ export function parsePastedRoster(text: string): RosterInputRow[] {
     const subjectsRaw = cells[3]
       ? cells[3].split(',').map((s) => s.trim()).filter(Boolean)
       : []
-    if (!fullName) continue
-    rows.push({ fullName, studentNumber, className, subjectsRaw })
+
+    if (!fullName) {
+      rows.push({
+        fullName: `(line ${lineNumber})`,
+        studentNumber: null,
+        className: null,
+        subjectsRaw: [],
+        lineNumber,
+        parseError: 'Name (the first cell before the first |) is empty',
+      })
+      continue
+    }
+
+    let parseError: string | undefined
+    if (cells.length < 4) {
+      // Tell the admin exactly which cell is missing.
+      const missing: string[] = []
+      if (cells.length < 3) missing.push('Class')
+      if (cells.length < 4) missing.push('Subjects')
+      parseError = `Missing ${missing.join(' and ')} — only ${cells.length} cell${cells.length === 1 ? '' : 's'} found (expected 4: Name | Student ID | Class | Subjects)`
+    } else if (cells.length > 4) {
+      // Extra pipes inside a name or subject list are a common source of bad
+      // rows ("Mr. Smith | 001 | JSS 1A | maths | english" — the user meant
+      // commas between subjects).
+      parseError = `Too many cells (${cells.length}) — found ${cells.length - 1} | characters but only 3 are expected. Did you use | between subjects instead of commas?`
+    }
+
+    rows.push({ fullName, studentNumber, className, subjectsRaw, lineNumber, parseError })
   }
   return rows
 }
@@ -77,14 +129,16 @@ export function fromSpreadsheetRows(headers: string[], rows: string[][]): Roster
   if (nameIdx < 0) return []
 
   const out: RosterInputRow[] = []
-  for (const row of rows) {
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i]
     const fullName = (row[nameIdx] ?? '').toString().trim()
     if (!fullName) continue
     const studentNumber = numIdx >= 0 && row[numIdx] ? row[numIdx].toString().trim() || null : null
     const className = classIdx >= 0 && row[classIdx] ? row[classIdx].toString().trim() || null : null
     const subjCell = subjIdx >= 0 && row[subjIdx] ? row[subjIdx].toString() : ''
     const subjectsRaw = subjCell.split(',').map((s) => s.trim()).filter(Boolean)
-    out.push({ fullName, studentNumber, className, subjectsRaw })
+    // Row 1 is the header; sheet line numbers start at 2 for the first data row.
+    out.push({ fullName, studentNumber, className, subjectsRaw, lineNumber: i + 2 })
   }
   return out
 }
@@ -112,17 +166,43 @@ export function resolveRows(rows: RosterInputRow[], cat: Catalogue): ResolvedRow
       subjectIds,
       unmatchedClass: r.className && !classId ? r.className : null,
       unmatchedSubjects,
+      lineNumber: r.lineNumber,
+      parseError: r.parseError,
     }
   })
 }
 
 export function rowHasError(r: ResolvedRow): boolean {
-  return !r.classId || r.subjectIds.length === 0 || r.unmatchedSubjects.length > 0 || !!r.unmatchedClass
+  return !!r.parseError || !r.classId || r.subjectIds.length === 0 || r.unmatchedSubjects.length > 0 || !!r.unmatchedClass
 }
 
 export function rowIsSubmittable(r: ResolvedRow): boolean {
   // Allow rows with partial subject matches as long as at least one matched and
   // there's a class. Unmatched subjects are warnings, not blockers — the admin
   // can drop the row from the preview if they want strict matching.
-  return !!r.classId && r.subjectIds.length > 0
+  return !r.parseError && !!r.classId && r.subjectIds.length > 0
+}
+
+/**
+ * Plain-English explanation of why a row won't be submitted. Returns null if
+ * the row is submittable. Designed for the per-row tooltip in the preview, so
+ * the admin never has to guess what "skipped" means.
+ */
+export function rowSkipReason(r: ResolvedRow): string | null {
+  if (rowIsSubmittable(r)) return null
+  if (r.parseError) return r.parseError
+  const reasons: string[] = []
+  if (!r.className) {
+    reasons.push('class is empty (3rd cell)')
+  } else if (!r.classId) {
+    reasons.push(`class "${r.className}" doesn't match any existing class`)
+  }
+  if (r.subjectsRaw.length === 0) {
+    reasons.push('no subjects listed (4th cell, comma-separated)')
+  } else if (r.subjectIds.length === 0) {
+    reasons.push(
+      `none of the subjects matched the catalogue (${r.subjectsRaw.join(', ')})`,
+    )
+  }
+  return reasons.join('; ') || 'row is incomplete'
 }

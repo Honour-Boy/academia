@@ -56,9 +56,13 @@ export default function EditStudentForm({
           type="text"
           required
           defaultValue={defaultName}
+          placeholder="Add a middle name to differentiate if another person shares the same name"
           className="input mt-1"
           autoComplete="off"
         />
+        <p className="text-xs text-ink-subtle mt-1">
+          Names must be unique across all staff and students (case-insensitive).
+        </p>
       </div>
 
       <div>

@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
+import { duplicateNameError, findNameConflict } from '@/lib/name-uniqueness'
 
 export async function createTeacherAction(formData: FormData) {
   const fullName = formData.get('full_name') as string
@@ -29,6 +30,12 @@ export async function createTeacherAction(formData: FormData) {
 
   // Use service role to create user without email confirmation
   const admin = createAdminClient()
+
+  // Block duplicate full names (case + punctuation insensitive). See
+  // lib/name-uniqueness.ts — the rule covers both staff and students.
+  const dup = await findNameConflict(admin, fullName)
+  if (dup.conflict) return { error: duplicateNameError(dup.conflict) }
+
   const { data: newUser, error: createError } = await admin.auth.admin.createUser({
     email: normalizedEmail,
     password,
