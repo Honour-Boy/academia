@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { Profile } from '@/types'
-import { LogOut, ShieldCheck, GraduationCap } from 'lucide-react'
+import { LogOut, ShieldCheck, GraduationCap, UserCog } from 'lucide-react'
 
 interface NavBarProps {
   profile: Pick<Profile, 'full_name' | 'role'>
@@ -57,16 +57,29 @@ export default function NavBar({ profile, schoolName }: NavBarProps) {
         )}
 
         <div className="flex items-center gap-2 pl-2 sm:pl-3 sm:border-l border-surface-border">
-          <div className="text-right hidden sm:block">
-            <p className="text-ink text-sm font-medium leading-none">{profile.full_name}</p>
-            <p className="text-ink-subtle text-xs mt-0.5 capitalize">{profile.role.toLowerCase()}</p>
-          </div>
-          <span
-            aria-hidden="true"
-            className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-brand-primary to-brand-secondary text-white font-semibold text-xs ring-1 ring-white/40 shadow-sm"
+          <Link
+            href="/profile"
+            aria-label="My profile"
+            className="flex items-center gap-2 rounded-lg pl-1 pr-1.5 sm:pr-2 py-1 hover:bg-surface-muted cursor-pointer transition-colors group"
           >
-            {initials}
-          </span>
+            <div className="text-right hidden sm:block">
+              <p className="text-ink text-sm font-medium leading-none group-hover:text-brand-primary transition-colors">{profile.full_name}</p>
+              <p className="text-ink-subtle text-xs mt-0.5 capitalize">{profile.role.toLowerCase()}</p>
+            </div>
+            <span
+              aria-hidden="true"
+              className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-brand-primary to-brand-secondary text-white font-semibold text-xs ring-1 ring-white/40 shadow-sm"
+            >
+              {initials}
+            </span>
+          </Link>
+          <Link
+            href="/profile"
+            aria-label="Edit profile"
+            className="sm:hidden inline-flex items-center justify-center w-10 h-10 rounded-lg text-ink-muted hover:text-brand-primary hover:bg-brand-primary-light cursor-pointer transition-colors"
+          >
+            <UserCog className="w-4 h-4" />
+          </Link>
           <button
             type="button"
             onClick={signOut}

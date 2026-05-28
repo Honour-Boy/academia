@@ -114,18 +114,24 @@ export default function AdminShell({ children, profile, pendingCount, schoolName
             <h1 className="text-base sm:text-lg font-semibold text-ink truncate">{currentPage}</h1>
           </div>
 
-          {/* User pill — tap signs out (simple for v1; can swap to DropdownMenu later) */}
-          <div className="flex items-center gap-3">
-            <div className="text-right hidden sm:block">
-              <p className="text-ink text-sm font-medium leading-none">{profile.full_name}</p>
-              <p className="text-ink-subtle text-xs mt-0.5">Administrator</p>
-            </div>
-            <span
-              aria-hidden="true"
-              className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-brand-primary to-brand-secondary text-white font-semibold text-xs ring-1 ring-white/40 shadow-sm"
+          {/* User pill — click to edit profile; separate sign-out button */}
+          <div className="flex items-center gap-2">
+            <Link
+              href="/profile"
+              aria-label="My profile"
+              className="flex items-center gap-2 rounded-lg pl-1 pr-1.5 sm:pr-2 py-1 hover:bg-surface-muted cursor-pointer transition-colors group"
             >
-              {initials || 'A'}
-            </span>
+              <div className="text-right hidden sm:block">
+                <p className="text-ink text-sm font-medium leading-none group-hover:text-brand-primary transition-colors">{profile.full_name}</p>
+                <p className="text-ink-subtle text-xs mt-0.5">Administrator</p>
+              </div>
+              <span
+                aria-hidden="true"
+                className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-brand-primary to-brand-secondary text-white font-semibold text-xs ring-1 ring-white/40 shadow-sm"
+              >
+                {initials || 'A'}
+              </span>
+            </Link>
             <button
               type="button"
               onClick={signOut}
