@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/server'
 import { currentTerm, currentAcademicYear, TERMS } from '@/lib/grade-utils'
 import EmptyState from '@/components/ui/EmptyState'
 import DownloadReportButton from './DownloadReportButton'
+import DownloadGradesCSVButton from './DownloadGradesCSVButton'
 
 export const metadata: Metadata = { title: 'Admin · Reports' }
 
@@ -46,12 +47,15 @@ export default async function ReportsAdminPage({ searchParams }: Props) {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-xl sm:text-2xl font-bold text-ink tracking-tight">Report sheets</h2>
-        <p className="text-sm text-ink-muted mt-1">
-          Preview or download student report PDFs for <span className="font-medium text-ink">{term} · {year}</span>.
-          {totalStudents > 0 && ` ${totalStudents} active ${totalStudents === 1 ? 'student' : 'students'}.`}
-        </p>
+      <div className="flex items-start sm:items-center gap-3 flex-col sm:flex-row sm:justify-between">
+        <div>
+          <h2 className="text-xl sm:text-2xl font-bold text-ink tracking-tight">Report sheets</h2>
+          <p className="text-sm text-ink-muted mt-1">
+            Preview or download student report PDFs for <span className="font-medium text-ink">{term} · {year}</span>.
+            {totalStudents > 0 && ` ${totalStudents} active ${totalStudents === 1 ? 'student' : 'students'}.`}
+          </p>
+        </div>
+        {totalStudents > 0 && <DownloadGradesCSVButton term={term} year={year} />}
       </div>
 
       {/* Filter card */}

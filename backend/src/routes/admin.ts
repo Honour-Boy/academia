@@ -160,6 +160,127 @@ adminRouter.delete('/assignments/:id', async (req, res) => {
   res.status(204).send()
 })
 
+// ─── CSV grade export ─────────────────────────────────────────────────────────
+
+/**
+ * GET /admin/grades-export?term=&academicYear=&classId=
+ * Streams all grades for the given term/year as CSV. Optional classId filter.
+ * ADMIN-only — gated by the router-level requireRole above.
+ */
+adminRouter.get('/grades-export', async (req, res) => {
+  const term = (req.query.term as string) || ''
+  const academicYear = (req.query.academicYear as string) || ''
+  const classId = (req.query.classId as string) || ''
+  if (!term || !academicYear) {
+    res.status(400).json({ error: 'term and academicYear required' })
+    return
+  }
+
+  // Pull grades joined with student / class / subject / component metadata.
+  let query = adminClient
+    .from('grades')
+    .select(`
+      score, term, academic_year,
+      students!student_id ( full_name, student_number, classes!class_id ( name ) ),
+      subjects!subject_id ( name ),
+      score_components!component_id ( name )
+    `)
+    .eq('term', term)
+    .eq('academic_year', academicYear)
+
+  if (classId) query = query.eq('class_id', classId)
+
+  const { data, error } = await query
+  if (error) {
+    res.status(500).json({ error: 'Failed to fetch grades' })
+    return
+  }
+
+  // Pivot rows into one row per (student, subject) with CA1/CA2/Exam columns.
+  type Row = {
+    className: string
+    studentName: string
+    studentNumber: string
+    subject: string
+    ca1: string
+    ca2: string
+    exam: string
+    total: number
+  }
+  const pivot = new Map<string, Row>()
+  for (const g of (data ?? []) as any[]) {
+    const student = g.students
+    const subject = g.subjects
+    const comp = g.score_components
+    if (!student || !subject || !comp) continue
+
+    const studentName = student.full_name as string
+    const className = student.classes?.name ?? 'Unassigned'
+    const studentNumber = student.student_number ?? ''
+    const subjectName = subject.name as string
+    const score = g.score as number | null
+    const key = `${studentName}::${subjectName}`
+
+    const r = pivot.get(key) ?? {
+      className,
+      studentName,
+      studentNumber,
+      subject: subjectName,
+      ca1: '',
+      ca2: '',
+      exam: '',
+      total: 0,
+    }
+    const cn = (comp.name as string).toLowerCase()
+    const cell = score === null || score === undefined ? '' : String(score)
+    if (cn.includes('ca 1') || cn.includes('ca1')) r.ca1 = cell
+    else if (cn.includes('ca 2') || cn.includes('ca2')) r.ca2 = cell
+    else if (cn.includes('exam')) r.exam = cell
+    if (typeof score === 'number') r.total += score
+    pivot.set(key, r)
+  }
+
+  const rows = Array.from(pivot.values()).sort((a, b) => {
+    if (a.className !== b.className) return a.className.localeCompare(b.className)
+    if (a.studentName !== b.studentName) return a.studentName.localeCompare(b.studentName)
+    return a.subject.localeCompare(b.subject)
+  })
+
+  const headers = ['Class', 'Student', 'Student #', 'Subject', 'CA1', 'CA2', 'Exam', 'Total', 'Term', 'Academic Year']
+  const lines = [headers.join(',')]
+  for (const r of rows) {
+    lines.push([
+      csvCell(r.className),
+      csvCell(r.studentName),
+      csvCell(r.studentNumber),
+      csvCell(r.subject),
+      r.ca1,
+      r.ca2,
+      r.exam,
+      r.total === 0 && r.ca1 === '' && r.ca2 === '' && r.exam === '' ? '' : String(r.total),
+      csvCell(term),
+      csvCell(academicYear),
+    ].join(','))
+  }
+
+  const filename = `grades_${slugify(term)}_${slugify(academicYear)}.csv`
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+  // Excel-friendly BOM so accented characters render correctly.
+  res.write('﻿')
+  res.end(lines.join('\n'))
+})
+
+function csvCell(v: string): string {
+  if (v == null) return ''
+  if (/[",\n]/.test(v)) return `"${v.replace(/"/g, '""')}"`
+  return v
+}
+
+function slugify(s: string): string {
+  return s.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '')
+}
+
 // ─── Audit log ────────────────────────────────────────────────────────────────
 
 /** GET /admin/audit?gradeId= — admin read-only view of audit entries */
