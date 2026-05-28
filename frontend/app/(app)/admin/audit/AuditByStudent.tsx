@@ -1,7 +1,7 @@
 'use client'
 
-import { useMemo } from 'react'
-import { ArrowRight, ChevronRight, User, BookOpen } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { ArrowRight, ChevronRight, User, BookOpen, Search, X } from 'lucide-react'
 
 export interface AuditEntry {
   id: string
@@ -32,10 +32,22 @@ function initials(name: string) {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('') || '?'
 }
 
+function normalize(s: string) {
+  return s.toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
+}
+
 export default function AuditByStudent({ entries }: Props) {
+  const [query, setQuery] = useState('')
+
+  const filteredEntries = useMemo(() => {
+    const q = normalize(query.trim())
+    if (!q) return entries
+    return entries.filter((e) => normalize(e.student).includes(q) || normalize(e.subject).includes(q))
+  }, [entries, query])
+
   const groups = useMemo<StudentGroup[]>(() => {
     const map = new Map<string, StudentGroup>()
-    for (const e of entries) {
+    for (const e of filteredEntries) {
       // Use studentId when present so two students with identical names don't collide;
       // fall back to the displayed name for unknown rows.
       const key = e.studentId ?? `name:${e.student}`
@@ -58,11 +70,41 @@ export default function AuditByStudent({ entries }: Props) {
     }
     // Most recently active student first.
     return Array.from(map.values()).sort((a, b) => (a.latest > b.latest ? -1 : 1))
-  }, [entries])
+  }, [filteredEntries])
 
   return (
-    <div className="card divide-y divide-surface-border overflow-hidden">
-      {groups.map((g) => (
+    <div className="space-y-4">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-subtle pointer-events-none" />
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Filter by student or subject…"
+          aria-label="Filter audit log"
+          className="input-brand pl-10 pr-9 [&::-webkit-search-cancel-button]:appearance-none"
+        />
+        {query && (
+          <button
+            type="button"
+            aria-label="Clear filter"
+            onClick={() => setQuery('')}
+            className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center justify-center w-7 h-7 rounded-md text-ink-subtle hover:text-ink hover:bg-surface-muted cursor-pointer transition-colors"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+
+      {groups.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-surface-border bg-surface-muted/60 px-6 py-10 text-center">
+          <Search className="w-7 h-7 mx-auto text-brand-accent/60" />
+          <p className="text-sm font-medium text-ink mt-2">No changes match &ldquo;{query}&rdquo;</p>
+          <p className="text-xs text-ink-muted mt-1">Try a different student or subject name.</p>
+        </div>
+      ) : (
+        <div className="card divide-y divide-surface-border overflow-hidden">
+          {groups.map((g) => (
         <details key={g.key} className="group">
           <summary className="cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden flex items-center gap-3 px-4 sm:px-5 py-3.5 hover:bg-surface-muted/60 transition-colors">
             <span className="inline-flex items-center justify-center w-10 h-10 rounded-full text-sm font-bold text-white flex-shrink-0 ring-1 ring-white/40 shadow-sm bg-gradient-to-br from-brand-secondary to-brand-primary">
@@ -120,7 +162,9 @@ export default function AuditByStudent({ entries }: Props) {
             ))}
           </ul>
         </details>
-      ))}
+          ))}
+        </div>
+      )}
     </div>
   )
 }
