@@ -1,10 +1,10 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
-import Link from 'next/link'
-import { ArrowLeft, ArrowRight } from 'lucide-react'
+import { ArrowRight, History } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
+import EmptyState from '@/components/ui/EmptyState'
 
-export const metadata: Metadata = { title: 'Grade Audit Log' }
+export const metadata: Metadata = { title: 'Admin · Audit log' }
 
 // Always render fresh — an audit log must reflect the latest writes.
 export const dynamic = 'force-dynamic'
@@ -39,33 +39,36 @@ export default async function AuditPage() {
   }))
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-6">
-      <div className="flex items-center gap-3 mb-6">
-        <Link href="/admin" className="btn-ghost p-2 -ml-2"><ArrowLeft className="w-5 h-5" /></Link>
-        <div>
-          <h1 className="font-semibold text-ink text-xl">Grade Audit Log</h1>
-          <p className="text-xs text-ink-muted">Most recent 200 changes</p>
-        </div>
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-xl sm:text-2xl font-bold text-ink tracking-tight">Grade audit log</h2>
+        <p className="text-sm text-ink-muted mt-1">
+          Every grade insert and update is logged here. Showing the most recent 200 changes.
+        </p>
       </div>
 
       {entries.length === 0 ? (
-        <div className="card p-10 text-center">
-          <p className="text-ink-muted">No grade changes recorded yet.</p>
-        </div>
+        <EmptyState
+          icon={History}
+          title="No grade changes recorded yet"
+          description="Once teachers start entering or updating scores, every change will appear here."
+        />
       ) : (
-        <div className="card divide-y divide-surface-border">
+        <div className="card divide-y divide-surface-border overflow-hidden">
           {entries.map((e) => (
-            <div key={e.id} className="px-4 py-3">
-              <div className="flex items-center justify-between gap-3 mb-1">
-                <p className="text-sm font-medium text-ink truncate">
-                  {e.student} · <span className="text-ink-muted font-normal">{e.subject}</span>
+            <div key={e.id} className="px-4 sm:px-5 py-3.5 hover:bg-surface-muted/60 transition-colors">
+              <div className="flex items-center justify-between gap-3 mb-1.5">
+                <p className="text-sm font-semibold text-ink truncate">
+                  {e.student}
+                  <span className="text-ink-muted font-normal"> · {e.subject}</span>
                 </p>
                 <span
-                  className={`flex-shrink-0 text-xs font-medium px-2 py-0.5 rounded-full ${
-                    e.action === 'INSERT'
-                      ? 'bg-emerald-50 text-emerald-700'
-                      : 'bg-amber-50 text-amber-700'
-                  }`}
+                  className={
+                    'inline-flex items-center text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full flex-shrink-0 ' +
+                    (e.action === 'INSERT'
+                      ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
+                      : 'bg-brand-secondary-light text-brand-secondary-dark ring-1 ring-brand-secondary/30')
+                  }
                 >
                   {e.action}
                 </span>
@@ -73,9 +76,9 @@ export default async function AuditPage() {
               <div className="flex items-center gap-2 text-sm font-mono text-ink">
                 <span className="text-ink-subtle">{e.oldScore ?? '—'}</span>
                 <ArrowRight className="w-3.5 h-3.5 text-ink-subtle" />
-                <span className="font-semibold">{e.newScore ?? '—'}</span>
+                <span className="font-bold">{e.newScore ?? '—'}</span>
               </div>
-              <p className="text-xs text-ink-subtle mt-1">
+              <p className="text-xs text-ink-subtle mt-1.5">
                 {e.who} · {new Date(e.changedAt).toLocaleString()}
               </p>
             </div>

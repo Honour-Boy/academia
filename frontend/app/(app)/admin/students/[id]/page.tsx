@@ -1,12 +1,12 @@
 import type { Metadata } from 'next'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft } from 'lucide-react'
+import { ChevronLeft, Pencil } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { currentTerm, currentAcademicYear } from '@/lib/grade-utils'
 import EditStudentForm from './EditStudentForm'
 
-export const metadata: Metadata = { title: 'Edit Student' }
+export const metadata: Metadata = { title: 'Admin · Edit Student' }
 
 interface Props { params: { id: string } }
 
@@ -59,15 +59,25 @@ export default async function EditStudentPage({ params }: Props) {
   }))
 
   return (
-    <div className="max-w-lg mx-auto px-4 py-6">
-      <div className="flex items-center gap-3 mb-6">
-        <Link href="/admin/students" className="btn-ghost p-2 -ml-2">
-          <ArrowLeft className="w-5 h-5" />
-        </Link>
-        <h1 className="font-semibold text-ink text-xl">Edit Student</h1>
+    <div className="max-w-xl mx-auto space-y-6">
+      <Link
+        href="/admin/students"
+        className="inline-flex items-center gap-1 text-sm text-ink-muted hover:text-brand-primary transition-colors"
+      >
+        <ChevronLeft className="w-4 h-4" /> Back to students
+      </Link>
+
+      <div className="flex items-center gap-3">
+        <span className="inline-flex items-center justify-center w-11 h-11 rounded-xl bg-brand-accent/10 text-brand-accent">
+          <Pencil className="w-5 h-5" />
+        </span>
+        <div>
+          <h2 className="text-xl sm:text-2xl font-bold text-ink tracking-tight">Edit student</h2>
+          <p className="text-sm text-ink-muted mt-0.5 truncate max-w-sm">{student.full_name}</p>
+        </div>
       </div>
 
-      <div className="card p-5">
+      <div className="card p-5 sm:p-6">
         <EditStudentForm
           studentId={params.id}
           defaultName={student.full_name}
