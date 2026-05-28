@@ -9,6 +9,9 @@ const ERROR_MESSAGES: Record<string, string> = {
   unauthorized:
     'That account isn’t authorised. Only registered staff — teachers and administrators — can sign in.',
   oauth: 'Google sign-in didn’t complete. Please try again.',
+  link: 'That sign-in link is missing required information. Please request a new one.',
+  session:
+    'We couldn’t complete sign-in. The link may have expired or already been used, or you opened it in a different browser. Please request a new link in the same browser you started from.',
 }
 
 export default function LoginPage({

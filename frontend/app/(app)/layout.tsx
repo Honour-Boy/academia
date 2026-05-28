@@ -1,7 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import NavBar from '@/components/ui/NavBar'
-import OfflineBanner from '@/components/ui/OfflineBanner'
+import AppChrome from '@/components/app/AppChrome'
 import AccountStatusScreen from '@/components/ui/AccountStatusScreen'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -45,13 +44,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div className="min-h-screen bg-surface-muted flex flex-col">
-      <OfflineBanner />
-      <NavBar profile={profile} />
-      {/* Content starts below the fixed navbar */}
-      <main className="flex-1 pt-16 pb-8">
-        {children}
-      </main>
-    </div>
+    <AppChrome profile={profile}>
+      {children}
+    </AppChrome>
   )
 }

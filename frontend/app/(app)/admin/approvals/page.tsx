@@ -1,8 +1,8 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
-import Link from 'next/link'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
-import { Mail, Phone, BookOpen, Home, ShieldCheck, Inbox, ChevronLeft } from 'lucide-react'
+import { Mail, Phone, BookOpen, Home, ShieldCheck, Inbox } from 'lucide-react'
+import EmptyState from '@/components/ui/EmptyState'
 import ApprovalActions from './ApprovalActions'
 
 export const metadata: Metadata = { title: 'Approval Queue' }
@@ -44,29 +44,27 @@ export default async function ApprovalsPage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-6">
-      <Link href="/admin" className="inline-flex items-center gap-1 text-sm text-ink-muted hover:text-ink mb-4 transition-colors">
-        <ChevronLeft className="w-4 h-4" /> Admin
-      </Link>
-
-      <div className="flex items-center gap-2 mb-1">
-        <h1 className="text-xl font-semibold text-ink">Approval Queue</h1>
-        {rows.length > 0 && (
-          <span className="text-xs font-semibold bg-brand-primary text-white px-2 py-0.5 rounded-full">
-            {rows.length}
-          </span>
-        )}
+    <div className="space-y-6">
+      <div>
+        <div className="flex items-center gap-3 flex-wrap">
+          <h2 className="text-xl sm:text-2xl font-bold text-ink tracking-tight">Approval queue</h2>
+          {rows.length > 0 && (
+            <span className="inline-flex items-center justify-center min-w-[1.75rem] h-7 px-2 rounded-full bg-brand-primary text-white text-xs font-bold">
+              {rows.length}
+            </span>
+          )}
+        </div>
+        <p className="text-sm text-ink-muted mt-1">
+          Review staff who registered themselves. Approving grants immediate access.
+        </p>
       </div>
-      <p className="text-ink-muted text-sm mb-6">
-        Review staff who registered themselves. Approving grants immediate access.
-      </p>
 
       {rows.length === 0 ? (
-        <div className="card p-10 flex flex-col items-center text-center gap-3">
-          <Inbox className="w-10 h-10 text-ink-subtle" />
-          <p className="font-medium text-ink">No pending registrations</p>
-          <p className="text-ink-muted text-sm">New staff sign-ups will appear here for review.</p>
-        </div>
+        <EmptyState
+          icon={Inbox}
+          title="Nothing to approve"
+          description="New self-registrations will appear here for review."
+        />
       ) : (
         <div className="space-y-4">
           {rows.map((r) => {
@@ -129,3 +127,4 @@ export default async function ApprovalsPage() {
     </div>
   )
 }
+

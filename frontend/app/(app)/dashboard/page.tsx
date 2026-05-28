@@ -20,6 +20,10 @@ export default async function DashboardPage() {
     .eq('id', user.id)
     .single()
 
+  // Admins live in the Admin Console — /dashboard is a teacher home with
+  // nothing useful for them.
+  if (profile?.role === 'ADMIN') redirect('/admin')
+
   const term = currentTerm()
   const year = currentAcademicYear()
   const isAdmin = profile?.role === 'ADMIN'

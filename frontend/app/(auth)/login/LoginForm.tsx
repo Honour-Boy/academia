@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import Link from 'next/link'
 import { loginAction } from './actions'
 import { createClient } from '@/lib/supabase/client'
-import { Eye, EyeOff, Loader2, AlertCircle } from 'lucide-react'
+import { Eye, EyeOff, Loader2, AlertCircle, MailCheck } from 'lucide-react'
 
 function GoogleIcon({ className }: { className?: string }) {
   return (
@@ -28,23 +29,61 @@ function GoogleIcon({ className }: { className?: string }) {
   )
 }
 
+type Mode = 'password' | 'magic'
+
 export default function LoginForm() {
+  const [mode, setMode] = useState<Mode>('password')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
   const [googleLoading, setGoogleLoading] = useState(false)
+  const [magicSending, setMagicSending] = useState(false)
+  const [magicSentTo, setMagicSentTo] = useState<string | null>(null)
 
-  const busy = isPending || googleLoading
+  const busy = isPending || googleLoading || magicSending
+
+  function switchMode(next: Mode) {
+    setMode(next)
+    setError(null)
+  }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setError(null)
     const formData = new FormData(e.currentTarget)
 
+    if (mode === 'magic') {
+      const email = ((formData.get('email') as string) ?? '').trim()
+      if (!email) return
+      void sendMagicLink(email)
+      return
+    }
+
     startTransition(async () => {
       const result = await loginAction(formData)
       if (result?.error) setError(result.error)
     })
+  }
+
+  async function sendMagicLink(email: string) {
+    setMagicSending(true)
+    const supabase = createClient()
+    const { error: otpError } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        // Magic-link sign-in is for EXISTING staff only — the staff onboarding
+        // flow at /register is the only path that should create new accounts.
+        shouldCreateUser: false,
+      },
+    })
+    if (otpError) {
+      setError('Could not send the sign-in link. Please try again in a moment.')
+      setMagicSending(false)
+      return
+    }
+    setMagicSentTo(email)
+    setMagicSending(false)
   }
 
   async function handleGoogle() {
@@ -58,11 +97,41 @@ export default function LoginForm() {
         queryParams: { prompt: 'select_account' },
       },
     })
-    // On success the browser is redirected to Google, so we only reach here on failure.
     if (oauthError) {
       setError('Could not start Google sign-in. Please try again.')
       setGoogleLoading(false)
     }
+  }
+
+  // Magic-link success — replace the form with a confirmation
+  if (magicSentTo) {
+    return (
+      <div className="space-y-5">
+        <div
+          role="status"
+          className="flex items-start gap-3 p-4 rounded-lg bg-brand-secondary-light border border-brand-secondary/30 text-ink"
+        >
+          <MailCheck className="w-5 h-5 mt-0.5 flex-shrink-0 text-brand-secondary-dark" />
+          <div className="text-sm">
+            <p className="font-medium">Check your inbox</p>
+            <p className="text-ink-muted mt-1">
+              If <strong>{magicSentTo}</strong> belongs to an approved staff account, a sign-in
+              link is on its way. The link expires in 1 hour.
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setMagicSentTo(null)
+            setMode('password')
+          }}
+          className="text-sm font-medium text-brand-primary hover:text-brand-primary-dark transition-colors"
+        >
+          Use a different sign-in method
+        </button>
+      </div>
+    )
   }
 
   return (
@@ -97,7 +166,7 @@ export default function LoginForm() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-        {/* Email */}
+        {/* Email — always shown */}
         <div>
           <label htmlFor="email" className="block text-sm font-medium text-ink mb-1.5">
             Email address
@@ -115,33 +184,43 @@ export default function LoginForm() {
           />
         </div>
 
-        {/* Password */}
-        <div>
-          <label htmlFor="password" className="block text-sm font-medium text-ink mb-1.5">
-            Password
-          </label>
-          <div className="relative">
-            <input
-              id="password"
-              name="password"
-              type={showPassword ? 'text' : 'password'}
-              autoComplete="current-password"
-              required
-              placeholder="••••••••"
-              className="input-brand pr-12"
-              disabled={busy}
-            />
-            <button
-              type="button"
-              onClick={() => setShowPassword((v) => !v)}
-              aria-label={showPassword ? 'Hide password' : 'Show password'}
-              className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-ink-subtle hover:text-brand-primary cursor-pointer transition-colors"
-              tabIndex={-1}
-            >
-              {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-            </button>
+        {/* Password — only in password mode */}
+        {mode === 'password' && (
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label htmlFor="password" className="block text-sm font-medium text-ink">
+                Password
+              </label>
+              <Link
+                href="/forgot-password"
+                className="text-xs font-medium text-brand-primary hover:text-brand-primary-dark transition-colors"
+              >
+                Forgot password?
+              </Link>
+            </div>
+            <div className="relative">
+              <input
+                id="password"
+                name="password"
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="current-password"
+                required
+                placeholder="••••••••"
+                className="input-brand pr-12"
+                disabled={busy}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-ink-subtle hover:text-brand-primary cursor-pointer transition-colors"
+                tabIndex={-1}
+              >
+                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Error */}
         {error && (
@@ -156,14 +235,45 @@ export default function LoginForm() {
 
         {/* Submit */}
         <button type="submit" disabled={busy} className="btn-brand w-full mt-1">
-          {isPending ? (
+          {mode === 'password' ? (
+            isPending ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" /> Signing in…
+              </>
+            ) : (
+              'Sign in'
+            )
+          ) : magicSending ? (
             <>
-              <Loader2 className="w-4 h-4 animate-spin" /> Signing in…
+              <Loader2 className="w-4 h-4 animate-spin" /> Sending link…
             </>
           ) : (
-            'Sign in'
+            'Email me a sign-in link'
           )}
         </button>
+
+        {/* Mode toggle */}
+        <div className="text-center pt-1">
+          {mode === 'password' ? (
+            <button
+              type="button"
+              onClick={() => switchMode('magic')}
+              disabled={busy}
+              className="text-sm font-medium text-brand-primary hover:text-brand-primary-dark transition-colors disabled:opacity-50"
+            >
+              Sign in with an email link instead
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => switchMode('password')}
+              disabled={busy}
+              className="text-sm font-medium text-brand-primary hover:text-brand-primary-dark transition-colors disabled:opacity-50"
+            >
+              Use email and password instead
+            </button>
+          )}
+        </div>
       </form>
     </div>
   )

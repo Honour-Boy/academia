@@ -13,6 +13,10 @@ export default function NavBar({ profile }: NavBarProps) {
   const router = useRouter()
   const supabase = createClient()
 
+  // /admin/* renders its own AdminShell (sidebar + topbar) — skip the public
+  // top NavBar there to avoid stacking two chromes.
+  if (pathname.startsWith('/admin')) return null
+
   async function signOut() {
     await supabase.auth.signOut()
     router.push('/login')

@@ -2,12 +2,12 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
 /**
- * OAuth callback — Google redirects here with a `code`.
+ * Auth callback — destination for Google OAuth, magic-link, and password-recovery
+ * email links. We exchange the PKCE `code` for a session, then forward to either
+ * `?next=` (e.g. /auth/update-password for recovery flows) or the dashboard.
  *
- * We only exchange the code for a session here. All access decisions
- * (onboarding incomplete → /register, pending → holding screen, approved → app)
- * are centralised in the (app) layout, which already loads the profile. This
- * keeps a single source of truth for routing by account status.
+ * Access decisions (onboarding incomplete → /register, pending → holding screen,
+ * approved → app) live in the (app) layout, so this handler stays minimal.
  *
  * No grade data or internal detail is ever leaked back to /login.
  */
@@ -15,6 +15,11 @@ export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
   const providerError = searchParams.get('error')
+  // Only accept relative same-origin paths to prevent open-redirect abuse.
+  const nextParam = searchParams.get('next')
+  const next = nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//')
+    ? nextParam
+    : '/dashboard'
 
   // Behind Vercel's proxy the real host is forwarded; use it in production so
   // we don't redirect to an internal origin.
@@ -22,18 +27,23 @@ export async function GET(request: Request) {
   const isLocalEnv = process.env.NODE_ENV === 'development'
   const base = !isLocalEnv && forwardedHost ? `https://${forwardedHost}` : origin
 
-  // User cancelled the Google consent screen, or the provider errored.
-  if (providerError || !code) {
+  // OAuth provider rejected the user, or the link is missing the auth code.
+  if (providerError) {
     return NextResponse.redirect(`${base}/login?error=oauth`)
+  }
+  if (!code) {
+    return NextResponse.redirect(`${base}/login?error=link`)
   }
 
   const supabase = await createClient()
 
   const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
   if (exchangeError) {
-    return NextResponse.redirect(`${base}/login?error=oauth`)
+    // Logged server-side so we can diagnose PKCE verifier mismatches without
+    // leaking detail to the client.
+    console.error('[auth/callback] exchangeCodeForSession failed:', exchangeError.message)
+    return NextResponse.redirect(`${base}/login?error=session`)
   }
 
-  // Land on the dashboard; the (app) layout routes by account status.
-  return NextResponse.redirect(`${base}/dashboard`)
+  return NextResponse.redirect(`${base}${next}`)
 }

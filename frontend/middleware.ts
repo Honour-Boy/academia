@@ -42,11 +42,13 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl
 
-  // Public routes — /auth handles the OAuth code exchange before a session
-  // exists; /register is the external staff sign-up path.
+  // Public routes — /auth handles OAuth/recovery code exchange before a session
+  // exists; /register is the external staff sign-up path; /forgot-password is
+  // the entry point for password reset.
   const isPublic =
     pathname.startsWith('/login') ||
     pathname.startsWith('/register') ||
+    pathname.startsWith('/forgot-password') ||
     pathname.startsWith('/auth') ||
     pathname.startsWith('/_next') ||
     pathname.startsWith('/favicon')
