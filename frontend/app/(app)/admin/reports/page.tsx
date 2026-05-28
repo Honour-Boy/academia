@@ -7,6 +7,7 @@ import { currentTerm, currentAcademicYear, TERMS } from '@/lib/grade-utils'
 import EmptyState from '@/components/ui/EmptyState'
 import DownloadReportButton from './DownloadReportButton'
 import DownloadGradesCSVButton from './DownloadGradesCSVButton'
+import DownloadClassZipButton from './DownloadClassZipButton'
 
 export const metadata: Metadata = { title: 'Admin · Reports' }
 
@@ -97,10 +98,18 @@ export default async function ReportsAdminPage({ searchParams }: Props) {
         <div className="space-y-6">
           {classNames.map((className) => (
             <section key={className}>
-              <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-ink-subtle mb-3">
-                <GraduationCap className="w-3.5 h-3.5" /> {className}
-                <span className="ml-1 text-ink-subtle/70">· {byClass[className].length}</span>
-              </h3>
+              <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+                <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-ink-subtle">
+                  <GraduationCap className="w-3.5 h-3.5" /> {className}
+                  <span className="ml-1 text-ink-subtle/70">· {byClass[className].length}</span>
+                </h3>
+                <DownloadClassZipButton
+                  className={className}
+                  studentIds={byClass[className].map((s) => s.id)}
+                  term={term}
+                  year={year}
+                />
+              </div>
               <div className="card divide-y divide-surface-border overflow-hidden">
                 {byClass[className].map((s) => (
                   <div key={s.id} className="flex items-center gap-3 px-4 sm:px-5 py-3.5 hover:bg-surface-muted/60 transition-colors">
