@@ -5,7 +5,7 @@ import ClassSubjectCard from '@/components/dashboard/ClassSubjectCard'
 import ClassTeacherCard from '@/components/dashboard/ClassTeacherCard'
 import StatCard from '@/components/ui/StatCard'
 import EmptyState from '@/components/ui/EmptyState'
-import { currentTerm, currentAcademicYear } from '@/lib/grade-utils'
+import { getSchoolSettings } from '@/lib/school-settings'
 import { BookOpen, Users, Activity, Sparkles } from 'lucide-react'
 
 export const metadata: Metadata = { title: 'Dashboard' }
@@ -24,8 +24,7 @@ export default async function DashboardPage() {
 
   if (profile?.role === 'ADMIN') redirect('/admin')
 
-  const term = currentTerm()
-  const year = currentAcademicYear()
+  const { currentTerm: term, currentAcademicYear: year } = await getSchoolSettings()
   const firstName = profile?.full_name?.split(' ')[0] ?? 'there'
 
   const { data: subjectAssignments } = await supabase

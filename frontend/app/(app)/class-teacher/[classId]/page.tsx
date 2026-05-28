@@ -3,7 +3,7 @@ import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ChevronLeft, Info } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
-import { currentTerm, currentAcademicYear } from '@/lib/grade-utils'
+import { getSchoolSettings } from '@/lib/school-settings'
 import ClassTeacherSheet from '@/components/grades/ClassTeacherSheet'
 import type { StudentRemark } from '@/types'
 
@@ -23,8 +23,9 @@ export default async function ClassTeacherPage({ params, searchParams }: Props) 
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const term = searchParams.term ?? currentTerm()
-  const year = searchParams.year ?? currentAcademicYear()
+  const settings = await getSchoolSettings()
+  const term = searchParams.term ?? settings.currentTerm
+  const year = searchParams.year ?? settings.currentAcademicYear
 
   const { data: cta } = await supabase
     .from('class_teacher_assignments')

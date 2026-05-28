@@ -19,6 +19,7 @@ import {
   LogOut,
   ShieldCheck,
   ChevronRight,
+  Settings,
 } from 'lucide-react'
 import { Sheet, SheetContent, SheetTitle, SheetClose } from '@/components/ui/Sheet'
 
@@ -57,6 +58,7 @@ export default function AdminShell({ children, profile, pendingCount, schoolName
     { href: '/admin/assignments', label: 'Assignments', icon: Network },
     { href: '/admin/reports',     label: 'Reports',     icon: FileText },
     { href: '/admin/audit',       label: 'Audit log',   icon: History },
+    { href: '/admin/settings',    label: 'Settings',    icon: Settings },
   ]
 
   // Active match: exact for /admin (don't light it up on every sub-route);

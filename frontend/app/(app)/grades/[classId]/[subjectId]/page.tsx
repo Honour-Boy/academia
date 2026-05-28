@@ -2,7 +2,8 @@ import type { Metadata } from 'next'
 import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import GradeEntryGrid from '@/components/grades/GradeEntryGrid'
-import { computeClassRows, classStats, currentTerm, currentAcademicYear } from '@/lib/grade-utils'
+import { computeClassRows, classStats } from '@/lib/grade-utils'
+import { getSchoolSettings } from '@/lib/school-settings'
 import type { Grade, ScoreComponent, Student } from '@/types'
 import Link from 'next/link'
 import { ChevronLeft } from 'lucide-react'
@@ -23,8 +24,9 @@ export default async function GradeEntryPage({ params, searchParams }: Props) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const term = searchParams.term ?? currentTerm()
-  const year = searchParams.year ?? currentAcademicYear()
+  const settings = await getSchoolSettings()
+  const term = searchParams.term ?? settings.currentTerm
+  const year = searchParams.year ?? settings.currentAcademicYear
 
   const { data: profile } = await supabase
     .from('profiles')

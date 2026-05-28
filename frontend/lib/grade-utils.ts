@@ -126,21 +126,11 @@ export function validateScore(
 }
 
 // ─── Term / Year helpers ──────────────────────────────────────────────────────
+//
+// The CURRENT term/year are admin-controlled and stored in school_settings.
+// Read them via `getCurrentTerm()` / `getCurrentAcademicYear()` in
+// `lib/school-settings.ts`. This module only owns the static list of valid
+// terms; it doesn't compute "now".
 
 export const TERMS = ['First Term', 'Second Term', 'Third Term'] as const
 export type Term = (typeof TERMS)[number]
-
-export function currentAcademicYear(): string {
-  const now = new Date()
-  const year = now.getFullYear()
-  const month = now.getMonth() + 1 // 1-based
-  // Nigerian academic year starts September
-  return month >= 9 ? `${year}/${year + 1}` : `${year - 1}/${year}`
-}
-
-export function currentTerm(): Term {
-  const month = new Date().getMonth() + 1
-  if (month >= 9 || month <= 12) return 'First Term'
-  if (month >= 1 && month <= 4) return 'Second Term'
-  return 'Third Term'
-}

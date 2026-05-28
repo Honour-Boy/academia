@@ -3,7 +3,8 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Eye, FileText, GraduationCap } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
-import { currentTerm, currentAcademicYear, TERMS } from '@/lib/grade-utils'
+import { TERMS } from '@/lib/grade-utils'
+import { getSchoolSettings } from '@/lib/school-settings'
 import EmptyState from '@/components/ui/EmptyState'
 import DownloadReportButton from './DownloadReportButton'
 import DownloadGradesCSVButton from './DownloadGradesCSVButton'
@@ -24,8 +25,9 @@ export default async function ReportsAdminPage({ searchParams }: Props) {
     .from('profiles').select('role').eq('id', user.id).single()
   if (profile?.role !== 'ADMIN') redirect('/dashboard')
 
-  const term = searchParams.term ?? currentTerm()
-  const year = searchParams.year ?? currentAcademicYear()
+  const settings = await getSchoolSettings()
+  const term = searchParams.term ?? settings.currentTerm
+  const year = searchParams.year ?? settings.currentAcademicYear
 
   const { data: students } = await supabase
     .from('students')

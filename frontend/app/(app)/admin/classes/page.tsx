@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { GraduationCap } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
-import { currentTerm, currentAcademicYear } from '@/lib/grade-utils'
+import { getSchoolSettings } from '@/lib/school-settings'
 import EmptyState from '@/components/ui/EmptyState'
 import CreateClassDialog from './CreateClassDialog'
 import ClassTeacherMatrix from './ClassTeacherMatrix'
@@ -18,8 +18,7 @@ export default async function ClassesAdminPage() {
     .from('profiles').select('role').eq('id', user.id).single()
   if (profile?.role !== 'ADMIN') redirect('/dashboard')
 
-  const term = currentTerm()
-  const year = currentAcademicYear()
+  const { currentTerm: term, currentAcademicYear: year } = await getSchoolSettings()
 
   const [
     { data: classes },
