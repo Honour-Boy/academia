@@ -68,10 +68,17 @@ const config: Config = {
           '30%, 50%, 70%': { transform: 'translateX(-4px)' },
           '40%, 60%': { transform: 'translateX(4px)' },
         },
+        'nav-progress': {
+          '0%':   { transform: 'scaleX(0)' },
+          '40%':  { transform: 'scaleX(0.6)' },
+          '80%':  { transform: 'scaleX(0.88)' },
+          '100%': { transform: 'scaleX(0.96)' },
+        },
       },
       animation: {
         'fade-in-up': 'fade-in-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both',
         'shake': 'shake 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97) both',
+        'nav-progress': 'nav-progress 4s cubic-bezier(0.16, 1, 0.3, 1) forwards',
       },
     },
   },
