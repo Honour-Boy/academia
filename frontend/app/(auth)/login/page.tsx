@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { ShieldCheck, AlertTriangle, UserPlus, ArrowRight } from 'lucide-react'
+import { ShieldCheck, AlertTriangle, UserPlus, ArrowRight, Clock, LogOut } from 'lucide-react'
 import LoginForm from './LoginForm'
 
 export const metadata: Metadata = { title: 'Sign In' }
@@ -14,13 +14,32 @@ const ERROR_MESSAGES: Record<string, string> = {
     'We couldn’t complete sign-in. The link may have expired or already been used, or you opened it in a different browser. Please request a new link in the same browser you started from.',
 }
 
+const REASON_NOTICES: Record<string, { title: string; body: string; icon: 'clock' | 'logout' }> = {
+  inactive: {
+    title: 'Signed out for inactivity',
+    body: 'You were signed out after a period of no activity. Sign in again to continue where you left off.',
+    icon: 'clock',
+  },
+  'session-ended': {
+    title: 'Your session ended',
+    body: 'You were signed out — possibly from another device, by an admin, or because your password changed. Sign in again to continue.',
+    icon: 'logout',
+  },
+  'signed-out-everywhere': {
+    title: 'Signed out everywhere',
+    body: 'All your sessions have been ended. Sign in again to start a new one.',
+    icon: 'logout',
+  },
+}
+
 export default function LoginPage({
   searchParams,
 }: {
-  searchParams: { error?: string }
+  searchParams: { error?: string; reason?: string }
 }) {
   const schoolName = process.env.NEXT_PUBLIC_SCHOOL_NAME ?? 'My Dream College'
   const alert = searchParams?.error ? ERROR_MESSAGES[searchParams.error] : null
+  const notice = searchParams?.reason ? REASON_NOTICES[searchParams.reason] : null
 
   return (
     <main className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden px-4 py-10 bg-gradient-to-br from-brand-accent via-brand-accent-dark to-brand-primary-dark">
@@ -62,6 +81,22 @@ export default function LoginPage({
             >
               <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
               <span>{alert}</span>
+            </div>
+          )}
+
+          {/* Sign-out reason notice (?reason=inactive | session-ended | signed-out-everywhere) */}
+          {notice && (
+            <div
+              role="status"
+              className="flex items-start gap-2 mb-5 p-3 rounded-lg bg-brand-secondary-light border border-brand-secondary/30 text-ink text-sm"
+            >
+              {notice.icon === 'clock'
+                ? <Clock className="w-4 h-4 mt-0.5 flex-shrink-0 text-brand-secondary-dark" />
+                : <LogOut className="w-4 h-4 mt-0.5 flex-shrink-0 text-brand-secondary-dark" />}
+              <div className="min-w-0">
+                <p className="font-medium">{notice.title}</p>
+                <p className="text-ink-muted mt-0.5">{notice.body}</p>
+              </div>
             </div>
           )}
 
