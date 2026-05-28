@@ -144,7 +144,9 @@ async function buildReportData(
     subjects: subjectScores,
     overallTotal,
     overallPercentage,
-    position: null, // computed at bulk level
+    // Position is computed + persisted by POST /reports/bulk. Single-student
+    // GETs read the last-computed value; may be NULL if bulk has never run.
+    position: (remark as any)?.position ?? null,
     timesPresent: remark?.times_present ?? null,
     timesAbsent: remark?.times_absent ?? null,
     timesLate: remark?.times_late ?? null,
@@ -210,6 +212,17 @@ reportsRouter.post('/bulk', async (req, res) => {
 
   const { studentIds, term, academicYear } = parsed.data
 
+  // Compute + persist class rank for every class the requested students belong
+  // to. Done up-front so each report has a fresh position.
+  const { data: classRows } = await adminClient
+    .from('students')
+    .select('id, class_id')
+    .in('id', studentIds)
+  const classIds = Array.from(new Set((classRows ?? []).map((r: any) => r.class_id).filter(Boolean)))
+  for (const classId of classIds) {
+    await recomputeAndPersistClassRank(classId as string, term, academicYear)
+  }
+
   res.setHeader('Content-Type', 'application/zip')
   res.setHeader(
     'Content-Disposition',
@@ -241,6 +254,73 @@ reportsRouter.post('/bulk', async (req, res) => {
 
   await archive.finalize()
 })
+
+/**
+ * For one class+term+year: compute each active student's overall total from
+ * `grades`, rank them 1..N (ties share rank — competition ranking), and upsert
+ * the result into `student_remarks.position`. Idempotent — runs before every
+ * bulk generation so rank reflects the latest scores.
+ */
+async function recomputeAndPersistClassRank(
+  classId: string,
+  term: string,
+  academicYear: string,
+): Promise<void> {
+  // Pull active students in the class + their grades for the term.
+  const { data: students } = await adminClient
+    .from('students')
+    .select('id')
+    .eq('class_id', classId)
+    .eq('is_active', true)
+  if (!students || students.length === 0) return
+
+  const studentIds = students.map((s: any) => s.id as string)
+  const { data: grades } = await adminClient
+    .from('grades')
+    .select('student_id, score')
+    .in('student_id', studentIds)
+    .eq('term', term)
+    .eq('academic_year', academicYear)
+
+  const totals = new Map<string, number>()
+  for (const id of studentIds) totals.set(id, 0)
+  for (const g of (grades ?? []) as any[]) {
+    if (typeof g.score === 'number') {
+      totals.set(g.student_id, (totals.get(g.student_id) ?? 0) + g.score)
+    }
+  }
+
+  // Sort descending by total. Competition ranking: tied students share rank,
+  // next rank skips by the number of ties.
+  const sorted = Array.from(totals.entries()).sort((a, b) => b[1] - a[1])
+  const positions = new Map<string, number>()
+  let lastScore: number | null = null
+  let lastRank = 0
+  for (let i = 0; i < sorted.length; i++) {
+    const [studentId, score] = sorted[i]
+    const rank = score === lastScore ? lastRank : i + 1
+    positions.set(studentId, rank)
+    lastScore = score
+    lastRank = rank
+  }
+
+  // Upsert into student_remarks. The UNIQUE(student_id, term, academic_year)
+  // constraint makes this safe.
+  const rows = Array.from(positions.entries()).map(([studentId, position]) => ({
+    student_id: studentId,
+    class_id: classId,
+    term,
+    academic_year: academicYear,
+    position,
+  }))
+  if (rows.length === 0) return
+
+  // Upsert by the unique key. If a row already exists (with attendance + remarks),
+  // only the position field changes.
+  await adminClient
+    .from('student_remarks')
+    .upsert(rows, { onConflict: 'student_id,term,academic_year' })
+}
 
 /** Helper: render PDF to Buffer using pdfkit */
 function pdfToBuffer(data: ReportData, template: ReturnType<typeof defaultTemplate>): Promise<Buffer> {
