@@ -45,10 +45,13 @@ export default function EnrollStudentForm({ classes, subjects, defaultTerm, defa
           name="full_name"
           type="text"
           required
-          placeholder="e.g. Adewale Okonkwo"
+          placeholder="e.g. Adewale Okonkwo — add a middle name if another student or teacher shares the same name"
           className="input mt-1"
           autoComplete="off"
         />
+        <p className="text-xs text-ink-subtle mt-1">
+          Names must be unique across all staff and students (case-insensitive). If a duplicate exists, add a middle name (or initial) to differentiate.
+        </p>
       </div>
 
       {/* Student Number (optional) */}

@@ -3,6 +3,7 @@
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { duplicateNameError, findNameConflict } from '@/lib/name-uniqueness'
 
 type RegisterResult = { error: string } | void
 
@@ -85,6 +86,10 @@ export async function registerStaffAction(formData: FormData): Promise<RegisterR
   if (data.password.length < 8) return { error: 'Password must be at least 8 characters.' }
 
   const admin = createAdminClient()
+
+  const dup = await findNameConflict(admin, data.fullName)
+  if (dup.conflict) return { error: duplicateNameError(dup.conflict) }
+
   const { data: created, error: createError } = await admin.auth.admin.createUser({
     email: data.email,
     password: data.password,
@@ -131,6 +136,11 @@ export async function completeOnboardingAction(formData: FormData): Promise<Regi
   if (!user) return { error: 'Your session has expired. Please start again.' }
 
   const admin = createAdminClient()
+
+  // Skip own row — a Google user finishing onboarding already owns this profile.
+  const dup = await findNameConflict(admin, data.fullName, { ignoreProfileId: user.id })
+  if (dup.conflict) return { error: duplicateNameError(dup.conflict) }
+
   await applyProfile(admin, user.id, data)
 
   redirect('/dashboard')

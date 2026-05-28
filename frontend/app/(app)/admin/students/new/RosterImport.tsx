@@ -11,7 +11,7 @@ import { cn } from '@/lib/cn'
 import type { Class, Subject } from '@/types'
 import { bulkEnrollStudentsAction } from '../actions'
 import {
-  parsePastedRoster, resolveRows, fromSpreadsheetRows, rowIsSubmittable,
+  parsePastedRoster, resolveRows, fromSpreadsheetRows, rowIsSubmittable, rowSkipReason,
   type ResolvedRow,
 } from './roster-parser'
 
@@ -186,12 +186,23 @@ export default function RosterImport({ classes, subjects }: Props) {
           <label htmlFor="bulk-roster" className="block text-xs font-semibold uppercase tracking-wider text-ink-subtle mb-1.5">
             Roster <span className="text-red-500">*</span>
           </label>
+          {/* Format reference, lifted out of the placeholder so the admin can
+              still see it after they start typing. */}
+          <div className="mb-2 rounded-lg border border-surface-border bg-surface-muted/60 px-3 py-2.5 text-xs leading-relaxed text-ink-muted">
+            <p className="font-semibold text-ink mb-1">Format — one student per line, pipe-separated:</p>
+            <pre className="font-mono text-[11px] text-ink whitespace-pre-wrap break-words">{`Name | Student ID | Class | subject1, subject2, …`}</pre>
+            <p className="mt-1.5 font-semibold text-ink">Example:</p>
+            <pre className="font-mono text-[11px] text-ink whitespace-pre-wrap break-words">{`Ayomide Ayobami | 2023/mds/023 | JSS 2A | maths, english, chemistry`}</pre>
+            <p className="mt-1.5">
+              <span className="font-semibold text-ink">Tips:</span> exactly 3 pipes (<span className="font-mono">|</span>) per line · use commas <em>between</em> subjects, not pipes · class and subject names are matched against the existing catalogue (case-insensitive).
+            </p>
+          </div>
           <textarea
             id="bulk-roster"
             value={text}
             onChange={(e) => { setText(e.target.value); setPreviewed(null); setResults(null) }}
             rows={8}
-            placeholder={`One student per line. Pipe-separated:\n  Name | Student ID | Class | subject1, subject2, …\n\nExample:\n  Ayomide Ayobami | 2023/mds/023 | JSS 2A | maths, english, chemistry`}
+            placeholder={`Ayomide Ayobami | 2023/mds/023 | JSS 2A | maths, english, chemistry`}
             className="input-brand font-mono text-sm leading-relaxed resize-y"
           />
           <p className="text-xs text-ink-subtle mt-1">
@@ -280,7 +291,8 @@ export default function RosterImport({ classes, subjects }: Props) {
             {previewed.map((row, idx) => {
               const failed = failedNames.has(row.fullName)
               const reason = results?.failed.find((f) => f.fullName === row.fullName)?.reason
-              const willSkip = !rowIsSubmittable(row)
+              const skipReason = rowSkipReason(row)
+              const willSkip = !!skipReason
               return (
                 <li
                   key={idx}
@@ -290,7 +302,9 @@ export default function RosterImport({ classes, subjects }: Props) {
                     !failed && willSkip && 'bg-brand-secondary-light/40',
                   )}
                 >
-                  <span className="w-6 text-[11px] font-mono text-ink-subtle text-right flex-shrink-0 pt-0.5">{idx + 1}</span>
+                  <span className="w-12 text-[11px] font-mono text-ink-subtle text-right flex-shrink-0 pt-0.5">
+                    {row.lineNumber ? `L${row.lineNumber}` : `#${idx + 1}`}
+                  </span>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-ink truncate">{row.fullName}</p>
                     <p className="text-xs text-ink-subtle font-mono mt-0.5">
@@ -313,6 +327,14 @@ export default function RosterImport({ classes, subjects }: Props) {
                         <Chip kind="bad" label="no subjects" />
                       )}
                     </div>
+                    {/* Per-row skip explanation — the user shouldn't have to
+                        guess why a line won't import. */}
+                    {willSkip && !failed && (
+                      <p className="mt-1.5 text-[11px] text-brand-secondary-dark inline-flex items-start gap-1">
+                        <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                        <span><span className="font-semibold">Skipped:</span> {skipReason}</span>
+                      </p>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     {failed && reason && (
