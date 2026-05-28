@@ -1,7 +1,8 @@
 import type { Metadata } from 'next'
 import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { getGradeLetter, gradeLetterClasses, currentTerm, currentAcademicYear } from '@/lib/grade-utils'
+import { getGradeLetter, gradeLetterClasses } from '@/lib/grade-utils'
+import { getSchoolSettings } from '@/lib/school-settings'
 import Link from 'next/link'
 import { ArrowLeft, Printer } from 'lucide-react'
 import type { Grade, ScoreComponent } from '@/types'
@@ -22,8 +23,9 @@ export default async function ReportPage({ params, searchParams }: Props) {
     .from('profiles').select('role').eq('id', user.id).single()
   if (!profile) redirect('/login')
 
-  const term = searchParams.term ?? currentTerm()
-  const year = searchParams.year ?? currentAcademicYear()
+  const settings = await getSchoolSettings()
+  const term = searchParams.term ?? settings.currentTerm
+  const year = searchParams.year ?? settings.currentAcademicYear
 
   // Fetch student
   const { data: student } = await supabase

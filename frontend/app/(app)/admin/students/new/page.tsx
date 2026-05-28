@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ChevronLeft, UserPlus } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
-import { currentTerm, currentAcademicYear } from '@/lib/grade-utils'
+import { getSchoolSettings } from '@/lib/school-settings'
 import EnrollTabs from './EnrollTabs'
 
 export const metadata: Metadata = { title: 'Admin · Enrol Student' }
@@ -17,8 +17,7 @@ export default async function EnrollStudentPage() {
     .from('profiles').select('role').eq('id', user.id).single()
   if (profile?.role !== 'ADMIN') redirect('/dashboard')
 
-  const term = currentTerm()
-  const year = currentAcademicYear()
+  const { currentTerm: term, currentAcademicYear: year } = await getSchoolSettings()
 
   const [
     { data: classes },

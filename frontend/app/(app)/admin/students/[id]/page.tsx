@@ -3,7 +3,7 @@ import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { ChevronLeft, Pencil } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
-import { currentTerm, currentAcademicYear } from '@/lib/grade-utils'
+import { getSchoolSettings } from '@/lib/school-settings'
 import EditStudentForm from './EditStudentForm'
 
 export const metadata: Metadata = { title: 'Admin · Edit Student' }
@@ -19,8 +19,7 @@ export default async function EditStudentPage({ params }: Props) {
     .from('profiles').select('role').eq('id', user.id).single()
   if (profile?.role !== 'ADMIN') redirect('/dashboard')
 
-  const term = currentTerm()
-  const year = currentAcademicYear()
+  const { currentTerm: term, currentAcademicYear: year } = await getSchoolSettings()
 
   const [
     { data: student },
