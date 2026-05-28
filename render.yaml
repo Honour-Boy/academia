@@ -24,7 +24,7 @@ services:
     region: frankfurt          # closest region to Nigeria
     branch: main
     rootDir: backend
-    buildCommand: npm ci && npm run build
+    buildCommand: npm ci --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /health
     autoDeploy: false          # CI-only deploys via deploy hook
@@ -55,7 +55,7 @@ services:
     region: frankfurt
     branch: staging
     rootDir: backend
-    buildCommand: npm ci && npm run build
+    buildCommand: npm ci --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /health
     autoDeploy: false          # CI-only deploys via deploy hook
