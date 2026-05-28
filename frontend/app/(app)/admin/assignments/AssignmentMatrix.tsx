@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Network, Lock, Check, Pencil, Plus, Minus, X } from 'lucide-react'
+import { Network, Lock, Check, Pencil, Plus, Minus, X, Info } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/Dialog'
 import { Combobox } from '@/components/ui/Combobox'
@@ -24,6 +24,12 @@ interface Props {
   classes: ClassRow[]
   subjects: SubjectRow[]
   assignments: ExistingAssignment[]
+  /**
+   * Subjects each teacher declared they teach at registration time. Empty
+   * array (or missing key) means "no preference recorded" — the matrix will
+   * show all subjects with a hint.
+   */
+  registeredSubjectsByTeacher: Record<string, string[]>
   term: string
   academicYear: string
 }
@@ -37,7 +43,7 @@ function cellKey(subjectId: string, classId: string) {
 }
 
 export default function AssignmentMatrix({
-  teachers, classes, subjects, assignments, term, academicYear,
+  teachers, classes, subjects, assignments, registeredSubjectsByTeacher, term, academicYear,
 }: Props) {
   const router = useRouter()
   const [teacherId, setTeacherId] = useState('')
@@ -72,13 +78,35 @@ export default function AssignmentMatrix({
     [staged, existingForTeacher],
   )
 
-  // In Edit mode, only show subjects the teacher already teaches — keeps the matrix
-  // focused on rows the admin can actually act on (delete-only in Edit).
+  // What the teacher registered as teaching at sign-up. Empty array means
+  // "no preference" — usually an admin-created account that skipped
+  // self-registration. We surface a banner in that case.
+  const teacherRegisteredSubjectIds = useMemo(
+    () => (teacherId ? registeredSubjectsByTeacher[teacherId] ?? [] : []),
+    [teacherId, registeredSubjectsByTeacher],
+  )
+  const teacherHasNoRegisteredSubjects = !!teacherId && teacherRegisteredSubjectIds.length === 0
+
+  // Subjects this teacher already has current-term assignments for. Always
+  // visible regardless of mode so the admin can edit historical data even if
+  // the teacher's registered-subjects list has since narrowed.
+  const taughtSubjectIds = useMemo(
+    () => new Set(Object.values(existingForTeacher).map((a) => a.subject_id)),
+    [existingForTeacher],
+  )
+
+  // Subject filter rules:
+  //   - Edit mode: only subjects the teacher already teaches (delete-only).
+  //   - Add mode + has registered subjects: union of registered + already-taught.
+  //   - Add mode + no registered subjects (admin-created account): show all,
+  //     with a hint banner so the admin knows they're seeing the full list.
   const visibleSubjects = useMemo(() => {
-    if (mode !== 'edit') return subjects
-    const taught = new Set(Object.values(existingForTeacher).map((a) => a.subject_id))
-    return subjects.filter((s) => taught.has(s.id))
-  }, [mode, subjects, existingForTeacher])
+    if (!teacherId) return subjects
+    if (mode === 'edit') return subjects.filter((s) => taughtSubjectIds.has(s.id))
+    if (teacherHasNoRegisteredSubjects) return subjects
+    const allowed = new Set([...teacherRegisteredSubjectIds, ...taughtSubjectIds])
+    return subjects.filter((s) => allowed.has(s.id))
+  }, [mode, subjects, teacherId, taughtSubjectIds, teacherRegisteredSubjectIds, teacherHasNoRegisteredSubjects])
 
   function toggleCell(subjectId: string, classId: string) {
     const k = cellKey(subjectId, classId)
@@ -189,6 +217,25 @@ export default function AssignmentMatrix({
         </div>
       ) : (
         <>
+          {/* Show what's driving the subject filter so the admin isn't
+              surprised by a shorter list than the full catalogue. */}
+          {mode === 'add' && !teacherHasNoRegisteredSubjects && (
+            <div className="rounded-lg bg-brand-primary-light border border-brand-primary/20 px-3 py-2 text-xs text-brand-primary-dark flex items-start gap-2">
+              <Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+              <span>
+                Showing the <span className="font-semibold">{visibleSubjects.length}</span> subject{visibleSubjects.length === 1 ? '' : 's'} this teacher registered (plus any they already teach). To extend the list, update their registered subjects from the staff record.
+              </span>
+            </div>
+          )}
+          {mode === 'add' && teacherHasNoRegisteredSubjects && (
+            <div className="rounded-lg bg-brand-secondary-light border border-brand-secondary/30 px-3 py-2 text-xs text-brand-accent-dark flex items-start gap-2">
+              <Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+              <span>
+                This teacher has no registered subjects on file (admin-created account or skipped sign-up). Showing the full subject catalogue for now.
+              </span>
+            </div>
+          )}
+
           <MatrixGrid
             subjects={visibleSubjects}
             classes={classes}
@@ -203,6 +250,13 @@ export default function AssignmentMatrix({
               <Pencil className="w-7 h-7 mx-auto text-brand-accent/60" />
               <p className="text-sm font-medium text-ink mt-2">No subjects to edit</p>
               <p className="text-xs text-ink-muted mt-1">This teacher has no current assignments. Switch to Add to attach subjects.</p>
+            </div>
+          )}
+          {mode === 'add' && visibleSubjects.length === 0 && (
+            <div className="rounded-xl border border-dashed border-surface-border bg-surface-muted/60 px-6 py-10 text-center">
+              <Network className="w-7 h-7 mx-auto text-brand-accent/60" />
+              <p className="text-sm font-medium text-ink mt-2">No subjects to assign</p>
+              <p className="text-xs text-ink-muted mt-1">This teacher hasn&apos;t registered any subjects. Update their staff record first.</p>
             </div>
           )}
 
