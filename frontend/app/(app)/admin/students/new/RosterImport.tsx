@@ -3,8 +3,6 @@
 import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import Papa from 'papaparse'
-import * as XLSX from 'xlsx'
 import {
   Eye, Trash2, AlertCircle, CheckCircle2, Loader2,
   ClipboardPaste, FileSpreadsheet, FileUp, X,
@@ -78,6 +76,8 @@ export default function RosterImport({ classes, subjects }: Props) {
     const lower = file.name.toLowerCase()
     try {
       if (lower.endsWith('.csv') || file.type === 'text/csv') {
+        // Lazy-load papaparse — only needed when the admin picks a CSV.
+        const Papa = (await import('papaparse')).default
         const buf = await file.text()
         const parsed = Papa.parse<string[]>(buf, { skipEmptyLines: true })
         if (parsed.errors.length > 0) {
@@ -97,6 +97,8 @@ export default function RosterImport({ classes, subjects }: Props) {
         }
         setPreviewed(resolveRows(inputRows, catalogue))
       } else if (lower.endsWith('.xlsx') || lower.endsWith('.xls')) {
+        // Lazy-load xlsx — ~100 KB, only needed for spreadsheet uploads.
+        const XLSX = await import('xlsx')
         const buf = await file.arrayBuffer()
         const wb = XLSX.read(buf, { type: 'array' })
         const sheet = wb.Sheets[wb.SheetNames[0]]
