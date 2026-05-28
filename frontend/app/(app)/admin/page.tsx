@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
-import { Users, BookOpen, GraduationCap, BarChart3, ChevronRight } from 'lucide-react'
+import { Users, BookOpen, GraduationCap, BarChart3, ChevronRight, UserCheck } from 'lucide-react'
 
 export const metadata: Metadata = { title: 'Admin' }
 
@@ -21,11 +21,13 @@ export default async function AdminPage() {
     { count: classCount },
     { count: studentCount },
     { count: gradeCount },
+    { count: pendingCount },
   ] = await Promise.all([
     supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'TEACHER').eq('is_active', true),
     supabase.from('classes').select('id', { count: 'exact', head: true }),
     supabase.from('students').select('id', { count: 'exact', head: true }).eq('is_active', true),
     supabase.from('grades').select('id', { count: 'exact', head: true }).not('score', 'is', null),
+    supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('status', 'pending').eq('onboarding_complete', true),
   ])
 
   const stats = [
@@ -36,6 +38,7 @@ export default async function AdminPage() {
   ]
 
   const quickLinks = [
+    { label: 'Approval queue',         description: 'Review self-registered staff',         href: '/admin/approvals' },
     { label: 'Add a teacher',          description: 'Create a staff account',               href: '/admin/teachers/new' },
     { label: 'Manage classes',         description: 'Assign class teachers to each arm',    href: '/admin/classes' },
     { label: 'Assign subjects',        description: 'Link subject teachers to classes',     href: '/admin/assignments' },
@@ -49,6 +52,25 @@ export default async function AdminPage() {
     <div className="max-w-2xl mx-auto px-4 py-6">
       <h1 className="text-xl font-semibold text-ink mb-1">Admin Panel</h1>
       <p className="text-ink-muted text-sm mb-6">Manage teachers, classes, and report data.</p>
+
+      {/* Pending approvals banner */}
+      {(pendingCount ?? 0) > 0 && (
+        <Link
+          href="/admin/approvals"
+          className="flex items-center gap-3 mb-6 p-4 rounded-xl bg-brand-primary-light border border-brand-primary/25 hover:border-brand-primary/50 transition-all active:scale-[0.99]"
+        >
+          <div className="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-brand-primary text-white flex-shrink-0">
+            <UserCheck className="w-5 h-5" />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-brand-primary-dark">
+              {pendingCount} staff {pendingCount === 1 ? 'registration' : 'registrations'} awaiting approval
+            </p>
+            <p className="text-xs text-brand-primary-dark/70 mt-0.5">Review and approve or deny new sign-ups.</p>
+          </div>
+          <ChevronRight className="w-4 h-4 text-brand-primary flex-shrink-0" />
+        </Link>
+      )}
 
       {/* Stats grid */}
       <div className="grid grid-cols-2 gap-3 mb-8">

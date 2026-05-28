@@ -25,13 +25,15 @@ export async function createTeacherAction(formData: FormData) {
     .from('profiles').select('role').eq('id', user.id).single()
   if (profile?.role !== 'ADMIN') return { error: 'Forbidden.' }
 
+  const normalizedEmail = email.trim().toLowerCase()
+
   // Use service role to create user without email confirmation
   const admin = createAdminClient()
   const { data: newUser, error: createError } = await admin.auth.admin.createUser({
-    email,
+    email: normalizedEmail,
     password,
     email_confirm: true,
-    user_metadata: { full_name: fullName, role: 'TEACHER' },
+    user_metadata: { full_name: fullName },
   })
 
   if (createError) {
@@ -40,7 +42,22 @@ export async function createTeacherAction(formData: FormData) {
     return { error: createError.message }
   }
 
-  // Profile is auto-created by the DB trigger (handle_new_user)
+  // The handle_new_user trigger creates a PENDING profile. An admin-created
+  // teacher is trusted by definition — auto-approve so they get access at once,
+  // skipping the self-registration queue.
+  if (newUser?.user?.id) {
+    await admin
+      .from('profiles')
+      .update({
+        full_name: fullName,
+        role: 'TEACHER',
+        status: 'approved',
+        is_active: true,
+        onboarding_complete: true,
+      })
+      .eq('id', newUser.user.id)
+  }
+
   revalidatePath('/admin/teachers')
   redirect('/admin/teachers')
 }

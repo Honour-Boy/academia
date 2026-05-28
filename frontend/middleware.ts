@@ -42,8 +42,14 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl
 
-  // Public routes
-  const isPublic = pathname.startsWith('/login') || pathname.startsWith('/_next') || pathname.startsWith('/favicon')
+  // Public routes — /auth handles the OAuth code exchange before a session
+  // exists; /register is the external staff sign-up path.
+  const isPublic =
+    pathname.startsWith('/login') ||
+    pathname.startsWith('/register') ||
+    pathname.startsWith('/auth') ||
+    pathname.startsWith('/_next') ||
+    pathname.startsWith('/favicon')
 
   if (!user && !isPublic) {
     // Not logged in → send to login

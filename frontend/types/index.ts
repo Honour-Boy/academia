@@ -1,5 +1,8 @@
 export type UserRole = 'ADMIN' | 'TEACHER'
 
+// Staff onboarding lifecycle: self-registered → pending → admin approves/denies
+export type StaffStatus = 'pending' | 'approved' | 'denied'
+
 // Nigerian WAEC-style grade letters
 export type GradeLetter = 'A1' | 'B2' | 'B3' | 'C4' | 'C5' | 'C6' | 'D7' | 'E8' | 'F9'
 
@@ -11,8 +14,25 @@ export interface Profile {
   email: string
   role: UserRole
   is_active: boolean
+  // Onboarding / approval (migration 004)
+  status: StaffStatus
+  phone: string | null
+  avatar_url: string | null
+  wants_class_teacher: boolean
+  requested_class_id: string | null
+  onboarding_complete: boolean
   created_at: string
   updated_at: string
+}
+
+// A subject a registrant says they teach — review material for the admin queue
+export interface StaffSubjectRequest {
+  id: string
+  profile_id: string
+  subject_id: string
+  created_at: string
+  // joined
+  subjects?: Subject
 }
 
 export interface Class {
