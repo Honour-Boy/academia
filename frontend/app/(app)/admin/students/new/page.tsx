@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { ChevronLeft, UserPlus } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { currentTerm, currentAcademicYear } from '@/lib/grade-utils'
-import EnrollStudentForm from './EnrollStudentForm'
+import EnrollTabs from './EnrollTabs'
 
 export const metadata: Metadata = { title: 'Admin · Enrol Student' }
 
@@ -66,7 +66,7 @@ export default async function EnrollStudentPage() {
       </div>
 
       <div className="card p-5 sm:p-6">
-        <EnrollStudentForm
+        <EnrollTabs
           classes={enrichedClasses}
           subjects={subjects ?? []}
           defaultTerm={term}

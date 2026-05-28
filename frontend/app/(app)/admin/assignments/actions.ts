@@ -56,3 +56,56 @@ export async function removeAssignmentAction(assignmentId: string) {
   revalidatePath('/admin/assignments')
   return { success: true }
 }
+
+export async function bulkUpdateTeacherAssignmentsAction(input: {
+  teacherId: string
+  term: string
+  academicYear: string
+  additions: Array<{ classId: string; subjectId: string }>
+  deletions: string[]
+}): Promise<{ added: number; removed: number; error?: string }> {
+  const admin = await assertAdmin()
+  if (!admin) return { added: 0, removed: 0, error: 'Unauthorised' }
+
+  const { teacherId, term, academicYear, additions, deletions } = input
+
+  if (!teacherId || !term || !academicYear) {
+    return { added: 0, removed: 0, error: 'Missing teacher or term' }
+  }
+
+  let added = 0
+  if (additions.length > 0) {
+    const rows = additions.map((a) => ({
+      teacher_id: teacherId,
+      class_id: a.classId,
+      subject_id: a.subjectId,
+      term,
+      academic_year: academicYear,
+    }))
+
+    const { data, error } = await admin
+      .from('teacher_assignments')
+      .upsert(rows, {
+        onConflict: 'teacher_id,class_id,subject_id,term,academic_year',
+        ignoreDuplicates: true,
+      })
+      .select('id')
+
+    if (error) return { added: 0, removed: 0, error: 'Failed to save assignments' }
+    added = data?.length ?? 0
+  }
+
+  let removed = 0
+  if (deletions.length > 0) {
+    const { error, count } = await admin
+      .from('teacher_assignments')
+      .delete({ count: 'exact' })
+      .in('id', deletions)
+
+    if (error) return { added, removed: 0, error: 'Failed to remove assignments' }
+    removed = count ?? 0
+  }
+
+  if (added > 0 || removed > 0) revalidatePath('/admin/assignments')
+  return { added, removed }
+}

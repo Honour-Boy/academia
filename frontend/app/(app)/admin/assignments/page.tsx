@@ -1,11 +1,12 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
-import { Network, BookOpen, GraduationCap, User } from 'lucide-react'
+import { Network, BookOpen, GraduationCap, User, Plus, ChevronDown } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { currentTerm, currentAcademicYear } from '@/lib/grade-utils'
 import EmptyState from '@/components/ui/EmptyState'
 import AssignSubjectTeacherForm from './AssignSubjectTeacherForm'
 import RemoveAssignmentButton from './RemoveAssignmentButton'
+import AssignmentMatrix from './AssignmentMatrix'
 
 export const metadata: Metadata = { title: 'Admin · Subject Assignments' }
 
@@ -32,17 +33,24 @@ export default async function AssignmentsAdminPage() {
     supabase.from('subjects').select('id, name').order('name'),
     supabase
       .from('teacher_assignments')
-      .select('id, profiles!teacher_id(full_name), classes!class_id(name), subjects!subject_id(name)')
+      .select('id, teacher_id, class_id, subject_id, profiles!teacher_id(full_name), classes!class_id(name), subjects!subject_id(name)')
       .eq('term', term)
       .eq('academic_year', year)
       .order('created_at', { ascending: false }),
   ])
 
-  const rows = (assignments ?? []).map((a) => ({
-    id: (a as any).id as string,
-    teacherName: (a as any).profiles?.full_name ?? '—',
-    className: (a as any).classes?.name ?? '—',
-    subjectName: (a as any).subjects?.name ?? '—',
+  const rawAssignments = (assignments ?? []).map((a: any) => ({
+    id: a.id as string,
+    teacher_id: a.teacher_id as string,
+    class_id: a.class_id as string,
+    subject_id: a.subject_id as string,
+  }))
+
+  const rows = (assignments ?? []).map((a: any) => ({
+    id: a.id as string,
+    teacherName: a.profiles?.full_name ?? '—',
+    className: a.classes?.name ?? '—',
+    subjectName: a.subjects?.name ?? '—',
   }))
 
   return (
@@ -50,26 +58,50 @@ export default async function AssignmentsAdminPage() {
       <div>
         <h2 className="text-xl sm:text-2xl font-bold text-ink tracking-tight">Subject assignments</h2>
         <p className="text-sm text-ink-muted mt-1">
-          Connect a teacher to a class for a specific subject. Drives grade-entry access for <span className="font-medium text-ink">{term} · {year}</span>.
+          Connect teachers to classes for specific subjects. Drives grade-entry access for{' '}
+          <span className="font-medium text-ink">{term} · {year}</span>.
         </p>
       </div>
 
-      {/* New assignment form */}
       <div className="card p-5 sm:p-6">
         <div className="flex items-center gap-2 mb-4">
           <span className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-brand-primary-light text-brand-primary-dark">
             <Network className="w-4 h-4" />
           </span>
-          <h3 className="text-sm font-semibold text-ink">New assignment</h3>
+          <h3 className="text-sm font-semibold text-ink">Bulk assignment matrix</h3>
+          <span className="ml-auto text-[10px] font-semibold uppercase tracking-wider text-brand-secondary-dark bg-brand-secondary-light px-2 py-0.5 rounded">
+            New
+          </span>
         </div>
-        <AssignSubjectTeacherForm
+        <AssignmentMatrix
           teachers={teachers ?? []}
           classes={classes ?? []}
           subjects={subjects ?? []}
+          assignments={rawAssignments}
           term={term}
           academicYear={year}
         />
       </div>
+
+      <details className="card p-5 sm:p-6 group">
+        <summary className="cursor-pointer flex items-center gap-2 select-none list-none [&::-webkit-details-marker]:hidden">
+          <span className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-brand-accent/10 text-brand-accent">
+            <Plus className="w-4 h-4" />
+          </span>
+          <span className="text-sm font-semibold text-ink">Add one assignment</span>
+          <span className="ml-auto text-xs text-ink-subtle">Click to expand</span>
+          <ChevronDown className="w-4 h-4 text-ink-subtle transition-transform group-open:rotate-180" />
+        </summary>
+        <div className="mt-4">
+          <AssignSubjectTeacherForm
+            teachers={teachers ?? []}
+            classes={classes ?? []}
+            subjects={subjects ?? []}
+            term={term}
+            academicYear={year}
+          />
+        </div>
+      </details>
 
       <section>
         <div className="flex items-center justify-between mb-3">
@@ -85,7 +117,7 @@ export default async function AssignmentsAdminPage() {
           <EmptyState
             icon={Network}
             title="Nothing assigned yet"
-            description="Use the form above to link a teacher to a class for a subject. Each row controls who can enter scores."
+            description="Use the matrix above to bulk-assign a teacher to multiple subject × class cells, then come back here for the per-row view."
           />
         ) : (
           <div className="card divide-y divide-surface-border overflow-hidden">

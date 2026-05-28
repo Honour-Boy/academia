@@ -107,6 +107,66 @@ export async function setStudentActiveAction(studentId: string, isActive: boolea
   return { success: true }
 }
 
+// ── Bulk enroll (paste roster) ────────────────────────────────────────────────
+
+export async function bulkEnrollStudentsAction(input: {
+  classId: string
+  subjectIds: string[]
+  students: Array<{ fullName: string; studentNumber: string | null }>
+}): Promise<{ enrolled: number; failed: Array<{ fullName: string; reason: string }> }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
+
+  const admin = createAdminClient()
+  const { data: profile } = await admin.from('profiles').select('role').eq('id', user.id).single()
+  if (profile?.role !== 'ADMIN') return { enrolled: 0, failed: input.students.map((s) => ({ fullName: s.fullName, reason: 'Unauthorised' })) }
+
+  const { classId, subjectIds, students } = input
+  if (!classId) return { enrolled: 0, failed: students.map((s) => ({ fullName: s.fullName, reason: 'No class selected' })) }
+  if (subjectIds.length === 0) return { enrolled: 0, failed: students.map((s) => ({ fullName: s.fullName, reason: 'No subjects selected' })) }
+
+  let enrolled = 0
+  const failed: Array<{ fullName: string; reason: string }> = []
+
+  for (const s of students) {
+    const name = s.fullName.trim()
+    if (!name) {
+      failed.push({ fullName: s.fullName, reason: 'Empty name' })
+      continue
+    }
+
+    const { data: student, error: studentErr } = await admin
+      .from('students')
+      .insert({ full_name: name, student_number: s.studentNumber || null, class_id: classId })
+      .select('id')
+      .single()
+
+    if (studentErr || !student) {
+      const reason = studentErr?.code === '23505'
+        ? 'Student number already in use'
+        : 'Failed to insert'
+      failed.push({ fullName: name, reason })
+      continue
+    }
+
+    const { error: subjErr } = await admin
+      .from('student_subjects')
+      .insert(subjectIds.map((sid) => ({ student_id: student.id, subject_id: sid })))
+
+    if (subjErr) {
+      await admin.from('students').delete().eq('id', student.id)
+      failed.push({ fullName: name, reason: 'Failed to attach subjects' })
+      continue
+    }
+
+    enrolled += 1
+  }
+
+  if (enrolled > 0) revalidatePath('/admin/students')
+  return { enrolled, failed }
+}
+
 // ── Assign class teacher ──────────────────────────────────────────────────────
 
 export async function assignClassTeacherAction(formData: FormData) {
