@@ -1,8 +1,25 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
-import { User, Mail, KeyRound, ShieldCheck } from 'lucide-react'
-import { createClient } from '@/lib/supabase/server'
+import { User, Mail, KeyRound, ShieldCheck, Monitor } from 'lucide-react'
+import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { IdentityForm, PasswordForm } from './ProfileForms'
+import SessionsCard, { type SessionRow } from './SessionsCard'
+
+// Pull the session_id claim out of a Supabase JWT without bringing in a JWT
+// library. The payload is the middle segment; URL-safe base64.
+function decodeSessionId(accessToken: string | null | undefined): string | null {
+  if (!accessToken) return null
+  const parts = accessToken.split('.')
+  if (parts.length < 2) return null
+  try {
+    const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+    const padded = payload + '='.repeat((4 - payload.length % 4) % 4)
+    const json = JSON.parse(Buffer.from(padded, 'base64').toString('utf-8'))
+    return typeof json.session_id === 'string' ? json.session_id : null
+  } catch {
+    return null
+  }
+}
 
 export const metadata: Metadata = { title: 'My profile' }
 
@@ -22,6 +39,28 @@ export default async function ProfilePage() {
     await supabase.auth.signOut()
     redirect('/login')
   }
+
+  // Active sessions — auth.sessions is under the auth schema, which user-RLS
+  // doesn't reach. Service-role client bypasses; we still scope by user_id so
+  // each admin only sees their own sessions, never anyone else's.
+  const { data: sessionData } = await supabase.auth.getSession()
+  const currentSessionId = decodeSessionId(sessionData?.session?.access_token)
+  const admin = createAdminClient()
+  const { data: rawSessions } = await admin
+    .schema('auth' as never)
+    .from('sessions')
+    .select('id, created_at, refreshed_at, user_agent, ip')
+    .eq('user_id', user.id)
+    .order('refreshed_at', { ascending: false, nullsFirst: false })
+
+  const sessions: SessionRow[] = (rawSessions ?? []).map((s: any) => ({
+    id: s.id,
+    createdAt: s.created_at,
+    refreshedAt: s.refreshed_at,
+    userAgent: s.user_agent,
+    ip: s.ip ? String(s.ip) : null,
+    isCurrent: currentSessionId === s.id,
+  }))
 
   const initials = profile.full_name
     .split(/\s+/)
@@ -81,6 +120,20 @@ export default async function ProfilePage() {
           </div>
         </div>
         <PasswordForm />
+      </section>
+
+      {/* Sessions */}
+      <section className="card p-5 sm:p-6 space-y-5">
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-brand-accent/10 text-brand-accent">
+            <Monitor className="w-4 h-4" />
+          </span>
+          <div>
+            <h2 className="text-sm font-semibold text-ink">Active sessions</h2>
+            <p className="text-xs text-ink-muted">Devices currently signed in to your account.</p>
+          </div>
+        </div>
+        <SessionsCard sessions={sessions} />
       </section>
 
       {/* Read-only account info */}

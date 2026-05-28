@@ -77,3 +77,42 @@ export async function updatePasswordAction(formData: FormData): Promise<
 
   return { success: true }
 }
+
+// ── Session management ───────────────────────────────────────────────────────
+
+/**
+ * Sign out every other device for this user, keeping the current browser
+ * signed in. Supabase's 'others' scope revokes all refresh tokens except the
+ * one in the current request.
+ */
+export async function signOutOtherSessionsAction(): Promise<
+  { error: string } | { success: true }
+> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
+
+  const { error } = await supabase.auth.signOut({ scope: 'others' })
+  if (error) return { error: 'Failed to sign out other devices.' }
+
+  return { success: true }
+}
+
+/**
+ * Sign out everywhere INCLUDING the current device. The browser will be
+ * bounced to /login on the next render once the client picks up SIGNED_OUT.
+ */
+export async function signOutEverywhereAction(): Promise<
+  { error: string } | { success: true }
+> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
+
+  const { error } = await supabase.auth.signOut({ scope: 'global' })
+  if (error) return { error: 'Failed to sign out everywhere.' }
+
+  // The next layout render will see no session and redirect anyway, but
+  // forcing it here keeps the UX tight if the action returns inline.
+  redirect('/login?reason=signed-out-everywhere')
+}
