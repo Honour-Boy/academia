@@ -26,6 +26,7 @@ export default async function AssignmentsAdminPage() {
     { data: classes },
     { data: subjects },
     { data: assignments },
+    { data: staffSubjectRequests },
   ] = await Promise.all([
     supabase.from('profiles').select('id, full_name').eq('role', 'TEACHER').eq('is_active', true).order('full_name'),
     supabase.from('classes').select('id, name').order('name'),
@@ -36,7 +37,24 @@ export default async function AssignmentsAdminPage() {
       .eq('term', term)
       .eq('academic_year', year)
       .order('created_at', { ascending: false }),
+    // Subjects each staff member declared they teach at registration. Used to
+    // filter the matrix to "only the subjects this teacher can teach" in Add
+    // mode — admins shouldn't see all 13 subjects when they pick a teacher
+    // who only registered for 3.
+    supabase.from('staff_subject_requests').select('profile_id, subject_id'),
   ])
+
+  // Per-teacher registered subject IDs. Teachers with no rows (admin-created
+  // accounts that skipped self-registration) get an empty array; the matrix
+  // falls back to showing all subjects with a hint banner for those.
+  const registeredSubjectsByTeacher: Record<string, string[]> = {}
+  for (const r of staffSubjectRequests ?? []) {
+    const profileId = (r as any).profile_id as string
+    const subjectId = (r as any).subject_id as string
+    const list = registeredSubjectsByTeacher[profileId] ?? []
+    list.push(subjectId)
+    registeredSubjectsByTeacher[profileId] = list
+  }
 
   const rawAssignments = (assignments ?? []).map((a: any) => ({
     id: a.id as string,
@@ -89,6 +107,7 @@ export default async function AssignmentsAdminPage() {
           classes={classes ?? []}
           subjects={subjects ?? []}
           assignments={rawAssignments}
+          registeredSubjectsByTeacher={registeredSubjectsByTeacher}
           term={term}
           academicYear={year}
         />
