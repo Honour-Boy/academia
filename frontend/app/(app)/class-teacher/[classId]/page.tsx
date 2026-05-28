@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Users } from 'lucide-react'
+import { ChevronLeft, Info } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { currentTerm, currentAcademicYear } from '@/lib/grade-utils'
 import ClassTeacherSheet from '@/components/grades/ClassTeacherSheet'
@@ -12,7 +12,7 @@ interface Props {
   searchParams: { term?: string; year?: string }
 }
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
+export async function generateMetadata(): Promise<Metadata> {
   return { title: 'Class Teacher Sheet' }
 }
 
@@ -26,7 +26,6 @@ export default async function ClassTeacherPage({ params, searchParams }: Props) 
   const term = searchParams.term ?? currentTerm()
   const year = searchParams.year ?? currentAcademicYear()
 
-  // Verify caller is the class teacher for this class+term+year
   const { data: cta } = await supabase
     .from('class_teacher_assignments')
     .select('id')
@@ -36,7 +35,6 @@ export default async function ClassTeacherPage({ params, searchParams }: Props) 
     .eq('academic_year', year)
     .maybeSingle()
 
-  // Admins can also view
   const { data: profile } = await supabase
     .from('profiles').select('role').eq('id', user.id).single()
 
@@ -62,42 +60,55 @@ export default async function ClassTeacherPage({ params, searchParams }: Props) 
   const remarkMap: Record<string, StudentRemark> = {}
   for (const r of remarks ?? []) remarkMap[r.student_id] = r as StudentRemark
 
-  const filled   = Object.keys(remarkMap).length
-  const total    = students?.length ?? 0
+  const filled = Object.keys(remarkMap).length
+  const total = students?.length ?? 0
+  const pct = total > 0 ? Math.round((filled / total) * 100) : 0
 
   return (
-    <div className="max-w-2xl mx-auto px-0 sm:px-4">
-      {/* Sticky header */}
-      <div className="sticky top-16 z-40 bg-surface-muted border-b border-surface-border px-4 py-3">
-        <div className="flex items-center gap-3">
-          <Link href="/dashboard" className="btn-ghost p-2 -ml-1">
-            <ArrowLeft className="w-5 h-5" />
+    <div className="max-w-3xl mx-auto w-full animate-fade-in-up">
+      <div className="sticky top-[68px] z-40 bg-white/90 backdrop-blur-md border-b border-surface-border">
+        <span aria-hidden="true" className="block h-0.5 bg-gradient-to-r from-brand-accent via-brand-primary to-brand-secondary" />
+        <div className="px-4 sm:px-6 py-3 sm:py-4 flex items-center gap-3">
+          <Link
+            href="/dashboard"
+            aria-label="Back to dashboard"
+            className="inline-flex items-center justify-center w-10 h-10 rounded-lg text-ink-muted hover:text-brand-primary hover:bg-brand-primary-light cursor-pointer transition-colors -ml-2"
+          >
+            <ChevronLeft className="w-5 h-5" />
           </Link>
           <div className="flex-1 min-w-0">
-            <h1 className="font-semibold text-ink text-base leading-tight">
+            <h1 className="font-bold text-ink text-base sm:text-lg leading-tight truncate">
               {classData.name}
             </h1>
             <p className="text-ink-muted text-xs mt-0.5">
-              Class Teacher Sheet · {term} · {year}
+              Class teacher sheet · {term} · {year}
             </p>
           </div>
-          <div className="flex-shrink-0 text-right">
-            <p className="text-xs font-medium text-ink">{filled}/{total}</p>
-            <p className="text-xs text-ink-muted">filled</p>
+          <div className="flex-shrink-0 text-right hidden sm:block">
+            <p className="text-sm font-bold text-ink font-mono">{filled}/{total}</p>
+            <p className="text-[10px] uppercase tracking-wider text-ink-subtle mt-0.5">Filled</p>
+          </div>
+        </div>
+        <div className="px-4 sm:px-6 pb-3">
+          <div className="h-1.5 bg-surface-border/60 rounded-full overflow-hidden">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-brand-primary to-brand-secondary transition-all duration-500 ease-out"
+              style={{ width: `${pct}%` }}
+            />
           </div>
         </div>
       </div>
 
-      {/* Info banner */}
-      <div className="mx-4 mt-4 mb-2 rounded-lg bg-blue-50 border border-blue-200 px-3 py-2 flex gap-2">
-        <Users className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" />
-        <p className="text-xs text-blue-700">
-          As class teacher you can record attendance, behaviour, and remarks for each student.
-          You cannot edit subject scores — those belong to the subject teachers.
-        </p>
+      <div className="px-4 sm:px-6 pt-4">
+        <div className="rounded-xl bg-brand-secondary-light border border-brand-secondary/30 px-3 py-2.5 flex gap-2.5">
+          <Info className="w-4 h-4 text-brand-secondary-dark flex-shrink-0 mt-0.5" />
+          <p className="text-xs sm:text-sm text-brand-accent-dark">
+            As class teacher you record attendance, behaviour, and remarks for each student. Subject scores belong to the subject teachers.
+          </p>
+        </div>
       </div>
 
-      <div className="px-4 py-3">
+      <div className="px-4 sm:px-6 py-4">
         <ClassTeacherSheet
           students={students ?? []}
           remarks={remarkMap}

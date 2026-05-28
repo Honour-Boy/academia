@@ -43,8 +43,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     redirect('/login')
   }
 
+  const schoolName = process.env.NEXT_PUBLIC_SCHOOL_NAME ?? 'My Dream College'
+
   return (
-    <AppChrome profile={profile}>
+    <AppChrome profile={profile} schoolName={schoolName}>
       {children}
     </AppChrome>
   )

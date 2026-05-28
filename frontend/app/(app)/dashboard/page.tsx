@@ -2,9 +2,11 @@ import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import ClassSubjectCard from '@/components/dashboard/ClassSubjectCard'
+import ClassTeacherCard from '@/components/dashboard/ClassTeacherCard'
+import StatCard from '@/components/ui/StatCard'
+import EmptyState from '@/components/ui/EmptyState'
 import { currentTerm, currentAcademicYear } from '@/lib/grade-utils'
-import { BookOpen, Users } from 'lucide-react'
-import Link from 'next/link'
+import { BookOpen, Users, Activity, Sparkles } from 'lucide-react'
 
 export const metadata: Metadata = { title: 'Dashboard' }
 
@@ -20,49 +22,31 @@ export default async function DashboardPage() {
     .eq('id', user.id)
     .single()
 
-  // Admins live in the Admin Console — /dashboard is a teacher home with
-  // nothing useful for them.
   if (profile?.role === 'ADMIN') redirect('/admin')
 
   const term = currentTerm()
   const year = currentAcademicYear()
-  const isAdmin = profile?.role === 'ADMIN'
+  const firstName = profile?.full_name?.split(' ')[0] ?? 'there'
 
-  // ── Subject-teacher assignments ────────────────────────────────────────────
-  const subjectQuery = supabase
+  const { data: subjectAssignments } = await supabase
     .from('teacher_assignments')
-    .select(`
-      id, term, academic_year,
+    .select(`id, term, academic_year,
       classes(id, name, level, arm),
-      subjects(id, name),
-      profiles!teacher_assignments_teacher_id_fkey(id, full_name)
-    `)
+      subjects(id, name)`)
     .eq('term', term)
     .eq('academic_year', year)
+    .eq('teacher_id', user.id)
 
-  if (!isAdmin) subjectQuery.eq('teacher_id', user.id)
-
-  const { data: subjectAssignments } = await subjectQuery
-
-  // ── Class-teacher assignments ──────────────────────────────────────────────
-  const ctQuery = supabase
+  const { data: classTeacherAssignments } = await supabase
     .from('class_teacher_assignments')
-    .select(`
-      id, term, academic_year,
-      classes(id, name, level, arm),
-      profiles!teacher_id(id, full_name)
-    `)
+    .select(`id, term, academic_year, classes(id, name, level, arm)`)
     .eq('term', term)
     .eq('academic_year', year)
+    .eq('teacher_id', user.id)
 
-  if (!isAdmin) ctQuery.eq('teacher_id', user.id)
-
-  const { data: classTeacherAssignments } = await ctQuery
-
-  // ── Enrich subject assignments with student counts ─────────────────────────
   const enrichedSubject = await Promise.all(
     (subjectAssignments ?? []).map(async (a: any) => {
-      const classId   = a.classes?.id
+      const classId = a.classes?.id
       const subjectId = a.subjects?.id
 
       const [{ count: totalStudents }, { count: gradedStudents }] = await Promise.all([
@@ -85,59 +69,73 @@ export default async function DashboardPage() {
     }),
   )
 
-  return (
-    <div className="max-w-2xl mx-auto px-4 py-6">
-      {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-xl font-semibold text-ink">
-          {isAdmin ? 'All Assignments' : `Welcome, ${profile?.full_name?.split(' ')[0]}`}
-        </h1>
-        <p className="text-ink-muted text-sm mt-0.5">{term} · {year}</p>
-      </div>
+  const subjectCount = enrichedSubject.length
+  const classCount = (classTeacherAssignments ?? []).length
+  const totalSlots = enrichedSubject.reduce((s, a) => s + a.totalStudents, 0)
+  const filledSlots = enrichedSubject.reduce((s, a) => s + a.gradedStudents, 0)
+  const completionPct = totalSlots > 0 ? Math.round((filledSlots / totalSlots) * 100) : 0
+  const hasAnyAssignment = subjectCount + classCount > 0
 
-      {/* ── Class Teacher section ─────────────────────────────────────────── */}
-      {(classTeacherAssignments ?? []).length > 0 && (
-        <section className="mb-6">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-subtle mb-2 flex items-center gap-1.5">
-            <Users className="w-3.5 h-3.5" /> Class Teacher
+  return (
+    <div className="max-w-5xl mx-auto w-full px-4 sm:px-6 py-6 sm:py-8 space-y-7 animate-fade-in-up">
+      <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-brand-accent via-brand-accent-dark to-brand-primary-dark text-white p-5 sm:p-7 shadow-lg shadow-brand-accent/20">
+        <span aria-hidden="true" className="absolute -top-10 -right-10 w-44 h-44 rounded-full bg-brand-secondary/20 blur-3xl" />
+        <span aria-hidden="true" className="absolute -bottom-12 -left-10 w-44 h-44 rounded-full bg-brand-primary/30 blur-3xl" />
+        <div className="relative">
+          <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-white/70">
+            <Sparkles className="w-3.5 h-3.5 text-brand-secondary" />
+            <span>{term} · {year}</span>
+          </div>
+          <h1 className="mt-2 text-2xl sm:text-3xl font-bold tracking-tight">
+            Hello, {firstName}.
+          </h1>
+          <p className="text-white/75 text-sm mt-1.5 max-w-md">
+            {hasAnyAssignment
+              ? 'Pick up where you left off. Tap any class to record scores, attendance, or remarks.'
+              : 'You’ll see your classes and subjects here once an admin assigns you.'}
+          </p>
+        </div>
+      </section>
+
+      {hasAnyAssignment && (
+        <section className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
+          <StatCard label="Subjects assigned" value={subjectCount} icon={BookOpen} tone="crimson" />
+          <StatCard label="Classes I lead"   value={classCount}   icon={Users}    tone="navy" />
+          <StatCard
+            label="Grading complete"
+            value={subjectCount > 0 ? `${completionPct}%` : '—'}
+            icon={Activity}
+            tone="gold"
+            hint={subjectCount > 0 ? `${filledSlots} of ${totalSlots} score slots` : undefined}
+          />
+        </section>
+      )}
+
+      {classCount > 0 && (
+        <section>
+          <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-ink-subtle mb-3">
+            <Users className="w-3.5 h-3.5" /> Class teacher
           </h2>
-          <div className="grid gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             {(classTeacherAssignments ?? []).map((a: any) => (
-              <Link
+              <ClassTeacherCard
                 key={a.id}
-                href={`/class-teacher/${a.classes?.id}?term=${encodeURIComponent(term)}&year=${encodeURIComponent(year)}`}
-                className="card px-4 py-4 flex items-center gap-3 hover:border-brand/40 transition-colors"
-              >
-                <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
-                  <Users className="w-5 h-5 text-blue-500" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-ink text-sm">{a.classes?.name}</p>
-                  <p className="text-xs text-ink-muted">
-                    Attendance · Behaviour · Remarks
-                  </p>
-                  {isAdmin && a.profiles?.full_name && (
-                    <p className="text-xs text-ink-subtle mt-0.5">{a.profiles.full_name}</p>
-                  )}
-                </div>
-                <span className="text-xs bg-blue-50 text-blue-600 font-medium px-2 py-0.5 rounded-full flex-shrink-0">
-                  Class Teacher
-                </span>
-              </Link>
+                classId={a.classes?.id}
+                className={a.classes?.name}
+                term={term}
+                academicYear={year}
+              />
             ))}
           </div>
         </section>
       )}
 
-      {/* ── Subject Teacher section ───────────────────────────────────────── */}
-      {enrichedSubject.length > 0 && (
+      {subjectCount > 0 && (
         <section>
-          {(classTeacherAssignments ?? []).length > 0 && (
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-subtle mb-2 flex items-center gap-1.5">
-              <BookOpen className="w-3.5 h-3.5" /> Subject Teacher
-            </h2>
-          )}
-          <div className="grid gap-3">
+          <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-ink-subtle mb-3">
+            <BookOpen className="w-3.5 h-3.5" /> Subject teacher
+          </h2>
+          <div className="grid gap-3 sm:grid-cols-2">
             {enrichedSubject.map((a: any) => (
               <ClassSubjectCard
                 key={a.id}
@@ -145,7 +143,6 @@ export default async function DashboardPage() {
                 subjectId={a.subjects?.id}
                 className={a.classes?.name}
                 subjectName={a.subjects?.name}
-                teacherName={isAdmin ? a.profiles?.full_name : undefined}
                 totalStudents={a.totalStudents}
                 gradedStudents={a.gradedStudents}
                 term={a.term}
@@ -156,18 +153,13 @@ export default async function DashboardPage() {
         </section>
       )}
 
-      {/* Empty state */}
-      {enrichedSubject.length === 0 && (classTeacherAssignments ?? []).length === 0 && (
-        <div className="card p-10 flex flex-col items-center text-center gap-3">
-          <BookOpen className="w-10 h-10 text-ink-subtle" />
-          <p className="font-medium text-ink">No assignments yet</p>
-          <p className="text-ink-muted text-sm">
-            {isAdmin
-              ? 'Go to Admin → Classes to assign class teachers, or Admin → Assignments to assign subjects.'
-              : 'Ask your administrator to assign you to a class.'}
-          </p>
-          {isAdmin && <Link href="/admin" className="btn-primary mt-2">Go to Admin</Link>}
-        </div>
+      {!hasAnyAssignment && (
+        <EmptyState
+          icon={BookOpen}
+          lottie="/lottie/empty-classroom.json"
+          title="Nothing on your plate yet"
+          description="Once an admin assigns you to a class or subject, your cards will land here. Reach out if you think this is a mistake."
+        />
       )}
     </div>
   )

@@ -7,15 +7,11 @@ import type { Profile } from '@/types'
 
 interface AppChromeProps {
   profile: Pick<Profile, 'full_name' | 'role'>
+  schoolName: string
   children: React.ReactNode
 }
 
-/**
- * Authenticated chrome wrapper. Renders the public top NavBar for teachers and
- * lets /admin/* render its own AdminShell unscoped (no spacing, no top bar
- * — AdminShell provides those itself).
- */
-export default function AppChrome({ profile, children }: AppChromeProps) {
+export default function AppChrome({ profile, schoolName, children }: AppChromeProps) {
   const pathname = usePathname()
   const isAdmin = pathname.startsWith('/admin')
 
@@ -24,8 +20,8 @@ export default function AppChrome({ profile, children }: AppChromeProps) {
   return (
     <div className="min-h-screen bg-surface-muted flex flex-col">
       <OfflineBanner />
-      <NavBar profile={profile} />
-      <main className="flex-1 pt-16 pb-8">{children}</main>
+      <NavBar profile={profile} schoolName={schoolName} />
+      <main className="flex-1 pt-[68px] pb-8">{children}</main>
     </div>
   )
 }

@@ -1,6 +1,7 @@
 'use client'
 
 import { useTransition, useState } from 'react'
+import { ChevronDown, ChevronUp, CheckCircle2, Loader2 } from 'lucide-react'
 import { upsertRemarkAction } from '@/app/(app)/class-teacher/[classId]/actions'
 import type { Student, StudentRemark, BehaviourRating } from '@/types'
 
@@ -21,8 +22,9 @@ export default function ClassTeacherSheet({
 }: Props) {
   if (!students.length) {
     return (
-      <div className="card p-10 text-center">
+      <div className="card p-10 sm:p-12 text-center">
         <p className="text-ink-muted text-sm">No students in this class yet.</p>
+        <p className="text-ink-subtle text-xs mt-1">Ask an admin to enrol students into this class.</p>
       </div>
     )
   }
@@ -72,28 +74,31 @@ function StudentRemarkRow({
     })
   }
 
+  const initials = student.full_name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('') || '?'
+
   return (
-    <div className="card overflow-hidden">
-      {/* Student header row */}
+    <div className="card overflow-hidden transition-shadow hover:shadow-md">
       <button
         type="button"
         onClick={() => setExpanded((p) => !p)}
-        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-surface-muted transition-colors text-left"
+        className="w-full flex items-center gap-3 px-4 sm:px-5 py-3.5 hover:bg-surface-muted/60 transition-colors text-left cursor-pointer"
       >
-        <div className="w-8 h-8 rounded-full bg-brand/10 text-brand-dark flex items-center justify-center text-sm font-semibold flex-shrink-0">
-          {student.full_name.charAt(0)}
-        </div>
+        <span className="w-10 h-10 rounded-full bg-gradient-to-br from-brand-accent to-brand-accent-dark text-white flex items-center justify-center text-sm font-bold flex-shrink-0 ring-1 ring-white/40 shadow-sm">
+          {initials}
+        </span>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-ink truncate">{student.full_name}</p>
+          <p className="text-sm font-semibold text-ink truncate">{student.full_name}</p>
           {student.student_number && (
-            <p className="text-xs text-ink-subtle">#{student.student_number}</p>
+            <p className="text-xs text-ink-subtle font-mono mt-0.5">#{student.student_number}</p>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-shrink-0">
           {remark && (
-            <span className="text-xs text-brand font-medium">Saved</span>
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 ring-1 ring-emerald-200 px-1.5 py-0.5 rounded-full">
+              <CheckCircle2 className="w-3 h-3" /> Saved
+            </span>
           )}
-          <span className="text-ink-subtle text-xs">{expanded ? '▲' : '▼'}</span>
+          {expanded ? <ChevronUp className="w-4 h-4 text-ink-subtle" /> : <ChevronDown className="w-4 h-4 text-ink-subtle" />}
         </div>
       </button>
 
@@ -160,8 +165,14 @@ function StudentRemarkRow({
             <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded">{error}</p>
           )}
 
-          <button type="submit" disabled={pending} className="btn-primary w-full">
-            {pending ? 'Saving…' : saved ? '✓ Saved' : 'Save Record'}
+          <button type="submit" disabled={pending} className="btn-brand w-full justify-center">
+            {pending ? (
+              <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>
+            ) : saved ? (
+              <><CheckCircle2 className="w-4 h-4" /> Saved</>
+            ) : (
+              'Save record'
+            )}
           </button>
         </form>
       )}

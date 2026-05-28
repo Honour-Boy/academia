@@ -6,62 +6,76 @@ import { createClient } from '@/lib/supabase/client'
 import type { Profile } from '@/types'
 import { LogOut, ShieldCheck, GraduationCap } from 'lucide-react'
 
-interface NavBarProps { profile: Pick<Profile, 'full_name' | 'role'> }
+interface NavBarProps {
+  profile: Pick<Profile, 'full_name' | 'role'>
+  schoolName: string
+}
 
-export default function NavBar({ profile }: NavBarProps) {
+export default function NavBar({ profile, schoolName }: NavBarProps) {
   const pathname = usePathname()
   const router = useRouter()
-  const supabase = createClient()
 
-  // /admin/* renders its own AdminShell (sidebar + topbar) — skip the public
-  // top NavBar there to avoid stacking two chromes.
   if (pathname.startsWith('/admin')) return null
 
   async function signOut() {
+    const supabase = createClient()
     await supabase.auth.signOut()
     router.push('/login')
     router.refresh()
   }
 
   const isAdmin = profile.role === 'ADMIN'
+  const initials = profile.full_name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase())
+    .join('') || '?'
 
   return (
-    <header className="fixed top-0 inset-x-0 z-50 h-16 bg-sidebar border-b border-white/10 flex items-center px-4 gap-3">
-      {/* Brand */}
-      <Link href="/dashboard" className="flex items-center gap-2 mr-auto cursor-pointer">
-        <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-brand">
-          <GraduationCap className="w-4 h-4 text-white" />
-        </div>
-        <span className="text-white font-semibold text-sm hidden sm:block">Academia</span>
-      </Link>
-
-      {/* Admin link */}
-      {isAdmin && (
-        <Link
-          href="/admin"
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer transition-colors
-            ${pathname.startsWith('/admin')
-              ? 'bg-white/15 text-white'
-              : 'text-slate-400 hover:text-white hover:bg-white/10'}`}
-        >
-          <ShieldCheck className="w-4 h-4" />
-          <span className="hidden sm:inline">Admin</span>
+    <header className="fixed top-0 inset-x-0 z-50 bg-white/85 backdrop-blur-md border-b border-surface-border">
+      <span aria-hidden="true" className="block h-1 bg-gradient-to-r from-brand-primary via-brand-secondary to-brand-primary" />
+      <div className="h-16 px-3 sm:px-6 flex items-center gap-3">
+        <Link href="/dashboard" className="flex items-center gap-2.5 mr-auto cursor-pointer group min-w-0">
+          <span className="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-brand-primary to-brand-secondary shadow-md shadow-brand-primary/25 ring-1 ring-white/40">
+            <GraduationCap className="w-4 h-4 text-white" strokeWidth={2.2} />
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-ink truncate leading-tight">{schoolName}</p>
+            <p className="text-[10px] uppercase tracking-wider text-ink-subtle leading-tight mt-0.5 hidden sm:block">Staff console</p>
+          </div>
         </Link>
-      )}
 
-      {/* User pill */}
-      <div className="flex items-center gap-2 pl-3 border-l border-white/10">
-        <div className="text-right hidden sm:block">
-          <p className="text-white text-xs font-medium leading-none">{profile.full_name}</p>
-          <p className="text-slate-500 text-xs mt-0.5">{profile.role}</p>
+        {isAdmin && (
+          <Link
+            href="/admin"
+            className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg text-xs sm:text-sm font-semibold text-brand-primary-dark bg-brand-primary-light hover:bg-brand-primary hover:text-white cursor-pointer transition-colors"
+          >
+            <ShieldCheck className="w-4 h-4" />
+            <span className="hidden sm:inline">Admin console</span>
+          </Link>
+        )}
+
+        <div className="flex items-center gap-2 pl-2 sm:pl-3 sm:border-l border-surface-border">
+          <div className="text-right hidden sm:block">
+            <p className="text-ink text-sm font-medium leading-none">{profile.full_name}</p>
+            <p className="text-ink-subtle text-xs mt-0.5 capitalize">{profile.role.toLowerCase()}</p>
+          </div>
+          <span
+            aria-hidden="true"
+            className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-brand-primary to-brand-secondary text-white font-semibold text-xs ring-1 ring-white/40 shadow-sm"
+          >
+            {initials}
+          </span>
+          <button
+            type="button"
+            onClick={signOut}
+            aria-label="Sign out"
+            className="inline-flex items-center justify-center w-10 h-10 rounded-lg text-ink-muted hover:text-brand-primary hover:bg-brand-primary-light cursor-pointer transition-colors"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
         </div>
-        <button
-          onClick={signOut}
-          aria-label="Sign out"
-          className="flex items-center justify-center w-8 h-8 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 cursor-pointer transition-colors"
-        >
-          <LogOut className="w-4 h-4" />
-        </button>
       </div>
     </header>
   )
