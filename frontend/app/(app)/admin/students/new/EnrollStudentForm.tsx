@@ -2,6 +2,7 @@
 
 import { useTransition, useState } from 'react'
 import { enrollStudentAction } from '../actions'
+import { Combobox } from '@/components/ui/Combobox'
 import type { Class, Subject } from '@/types'
 
 interface Props {
@@ -65,19 +66,20 @@ export default function EnrollStudentForm({ classes, subjects, defaultTerm, defa
       {/* Class */}
       <div>
         <label htmlFor="class_id" className="label">Assigned Class <span className="text-red-500">*</span></label>
-        <select
+        <Combobox
           id="class_id"
           name="class_id"
-          required
-          className="input mt-1"
+          className="mt-1"
           value={selectedClassId}
-          onChange={(e) => setSelectedClassId(e.target.value)}
-        >
-          <option value="">— Select a class —</option>
-          {classes.map((c) => (
-            <option key={c.id} value={c.id}>{c.name}</option>
-          ))}
-        </select>
+          onChange={setSelectedClassId}
+          options={classes.map((c) => ({
+            value: c.id,
+            label: c.name,
+            secondary: c.classTeacherName ? `— ${c.classTeacherName}` : undefined,
+          }))}
+          placeholder="— Select a class —"
+          searchPlaceholder="Search classes…"
+        />
 
         {/* Auto-show class teacher */}
         {selectedClass && (

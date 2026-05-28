@@ -1,10 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/cn'
+import NavProgress from '@/components/ui/NavProgress'
 import {
   LayoutDashboard,
   UserCheck,
@@ -75,6 +76,8 @@ export default function AdminShell({ children, profile, pendingCount, schoolName
 
   return (
     <div className="min-h-screen flex bg-surface-muted">
+      <Suspense fallback={null}><NavProgress /></Suspense>
+
       {/* ── Desktop sidebar ─────────────────────────────────────────── */}
       <aside className="hidden lg:flex w-72 fixed inset-y-0 left-0 z-30 flex-col bg-gradient-to-b from-brand-accent via-brand-accent-dark to-brand-primary-dark text-white">
         {/* Top accent strip */}

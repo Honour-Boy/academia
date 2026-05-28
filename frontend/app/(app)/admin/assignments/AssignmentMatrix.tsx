@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { Network, Lock, Check, Pencil, Plus, Minus, X } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/Dialog'
+import { Combobox } from '@/components/ui/Combobox'
 import { bulkUpdateTeacherAssignmentsAction } from './actions'
 
 interface Teacher { id: string; full_name: string }
@@ -165,17 +166,17 @@ export default function AssignmentMatrix({
         <label htmlFor="matrix-teacher" className="text-sm font-semibold text-ink flex-shrink-0">
           Teacher
         </label>
-        <select
+        <Combobox
           id="matrix-teacher"
+          className="flex-1 max-w-md"
           value={teacherId}
-          onChange={(e) => { setTeacherId(e.target.value); resetStaged() }}
-          className="input-brand flex-1 max-w-md"
-        >
-          <option value="">— Select a teacher —</option>
-          {teachers.map((t) => (
-            <option key={t.id} value={t.id}>{t.full_name}</option>
-          ))}
-        </select>
+          onChange={(v) => { setTeacherId(v); resetStaged() }}
+          options={teachers.map((t) => ({ value: t.id, label: t.full_name }))}
+          placeholder="— Select a teacher —"
+          searchPlaceholder="Search teachers…"
+          emptyMessage="No teachers match"
+          clearable
+        />
 
         <ModeToggle mode={mode} onChange={(m) => { setMode(m); setStaged({}) }} disabled={!teacherId} />
       </div>
