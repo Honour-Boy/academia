@@ -19,7 +19,7 @@ const NODE_ENV = process.env.NODE_ENV ?? 'development'
 // FRONTEND_ORIGIN is comma-separated (e.g. "https://academia.vercel.app,https://academia-staging.vercel.app")
 const allowedOrigins = (process.env.FRONTEND_ORIGIN ?? 'http://localhost:3000')
   .split(',')
-  .map(o => o.trim())
+  .map((o: string) => o.trim())
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 
@@ -31,14 +31,17 @@ app.use(helmet())
 // CORS — only allow configured frontend origins
 app.use(
   cors({
-    origin(origin, callback) {
+    origin(
+      origin: string | undefined,
+      callback: (err: Error | null, allow?: boolean) => void,
+    ) {
       // Allow no-origin requests (same-origin, curl, health checks)
       if (!origin) return callback(null, true)
       // Allow exact match or Vercel preview URL prefix
       const allowed =
         allowedOrigins.includes(origin) ||
         allowedOrigins.some(
-          o => o.startsWith('https://') && origin.endsWith('.vercel.app'),
+          (o: string) => o.startsWith('https://') && origin.endsWith('.vercel.app'),
         )
       if (allowed) {
         callback(null, true)
