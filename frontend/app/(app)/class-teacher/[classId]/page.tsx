@@ -5,6 +5,7 @@ import { ChevronLeft, Info } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { getSchoolSettings } from '@/lib/school-settings'
 import ClassTeacherSheet from '@/components/grades/ClassTeacherSheet'
+import DownloadClassZipButton from '@/app/(app)/admin/reports/DownloadClassZipButton'
 import type { StudentRemark } from '@/types'
 
 interface Props {
@@ -100,13 +101,27 @@ export default async function ClassTeacherPage({ params, searchParams }: Props) 
         </div>
       </div>
 
-      <div className="px-4 sm:px-6 pt-4">
+      <div className="px-4 sm:px-6 pt-4 space-y-3">
         <div className="rounded-xl bg-brand-secondary-light border border-brand-secondary/30 px-3 py-2.5 flex gap-2.5">
           <Info className="w-4 h-4 text-brand-secondary-dark flex-shrink-0 mt-0.5" />
           <p className="text-xs sm:text-sm text-brand-accent-dark">
             As class teacher you record attendance, behaviour, and remarks for each student. Subject scores belong to the subject teachers.
           </p>
         </div>
+
+        {students && students.length > 0 && (
+          <div className="rounded-xl bg-white border border-surface-border px-3 py-2.5 flex items-center gap-3">
+            <p className="text-xs text-ink-muted flex-1 min-w-0">
+              Generate every student&apos;s report sheet for this class as a single ZIP.
+            </p>
+            <DownloadClassZipButton
+              className={classData.name}
+              studentIds={students.map((s) => s.id)}
+              term={term}
+              year={year}
+            />
+          </div>
+        )}
       </div>
 
       <div className="px-4 sm:px-6 py-4">

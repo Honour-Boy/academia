@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Network, Lock, Check, Pencil, Plus, Minus, X, Info } from 'lucide-react'
+import { Network, Lock, Check, Pencil, Plus, Minus, X, Info, XCircle } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/Dialog'
 import { Combobox } from '@/components/ui/Combobox'
@@ -205,6 +205,16 @@ export default function AssignmentMatrix({
           emptyMessage="No teachers match"
           clearable
         />
+
+        {/* Explicit Clear button — the Combobox's built-in × is easy to miss. */}
+        <button
+          type="button"
+          onClick={() => { setTeacherId(''); resetStaged(); setMode('add') }}
+          disabled={!teacherId || submitting}
+          className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg text-sm font-medium text-ink-muted hover:text-ink hover:bg-surface-muted cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          <XCircle className="w-4 h-4" /> Clear
+        </button>
 
         <ModeToggle mode={mode} onChange={(m) => { setMode(m); setStaged({}) }} disabled={!teacherId} />
       </div>

@@ -49,13 +49,23 @@ export default async function GradeEntryPage({ params, searchParams }: Props) {
   const [
     { data: classData },
     { data: subjectData },
-    { data: enrollments },
+    { data: classStudents },
     { data: grades },
     { data: components },
   ] = await Promise.all([
     supabase.from('classes').select('*').eq('id', classId).single(),
     supabase.from('subjects').select('*').eq('id', subjectId).single(),
-    supabase.from('student_subjects').select('student_id').eq('subject_id', subjectId),
+    // Pull the class roster up-front so we can scope the enrolment lookup to
+    // students in THIS class (not the global enrolment set for the subject).
+    // Previously, if any student elsewhere took this subject, the .in(id, …)
+    // filter excluded class students who hadn't been explicitly enrolled —
+    // resulting in a blank grade-entry sheet ("subjects show blank").
+    supabase
+      .from('students')
+      .select('*')
+      .eq('class_id', classId)
+      .eq('is_active', true)
+      .order('full_name'),
     supabase
       .from('grades')
       .select('*')
@@ -69,20 +79,25 @@ export default async function GradeEntryPage({ params, searchParams }: Props) {
       .order('sort_order'),
   ])
 
-  const enrolledIds = (enrollments ?? []).map((e: { student_id: string }) => e.student_id)
+  const classStudentIds = (classStudents ?? []).map((s: { id: string }) => s.id)
 
-  let studentsQuery = supabase
-    .from('students')
-    .select('*')
-    .eq('class_id', classId)
-    .eq('is_active', true)
-    .order('full_name')
-
-  if (enrolledIds.length > 0) {
-    studentsQuery = studentsQuery.in('id', enrolledIds)
+  // Now scope the enrolment check to just THIS class. If any class student is
+  // enrolled in this subject, we filter down to enrolees. If NO class student
+  // is enrolled (admins skipped subject pick on enrolment), fall back to the
+  // full roster — same forgiving behaviour as before, just correctly scoped.
+  let enrolledIds: string[] = []
+  if (classStudentIds.length > 0) {
+    const { data: enrollments } = await supabase
+      .from('student_subjects')
+      .select('student_id')
+      .eq('subject_id', subjectId)
+      .in('student_id', classStudentIds)
+    enrolledIds = (enrollments ?? []).map((e: { student_id: string }) => e.student_id)
   }
 
-  const { data: students } = await studentsQuery
+  const students = enrolledIds.length > 0
+    ? (classStudents ?? []).filter((s: { id: string }) => enrolledIds.includes(s.id))
+    : classStudents ?? []
 
   if (!classData || !subjectData) notFound()
 

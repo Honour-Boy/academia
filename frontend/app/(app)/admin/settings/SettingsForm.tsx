@@ -17,6 +17,12 @@ interface Props {
   lastUpdatedBy: string | null
 }
 
+/** "2025/2026" → 2025. Returns null on garbage input. */
+function parseYearStart(value: string): number | null {
+  const m = value.trim().match(/^(\d{4})\/\d{4}$/)
+  return m ? parseInt(m[1], 10) : null
+}
+
 export default function SettingsForm({
   initialTerm, initialYear, lastUpdatedAt, lastUpdatedBy,
 }: Props) {
@@ -41,6 +47,21 @@ export default function SettingsForm({
     if (!termChanged && !yearChanged) {
       toast.info('No changes to save')
       return
+    }
+
+    // Block backward year navigation — the wizard only supports promotion.
+    // Stepping back to an earlier year requires view-only history (coming in
+    // the follow-up PR). For now, reject with context.
+    if (yearChanged) {
+      const initialStart = parseYearStart(initialYear)
+      const newStart = parseYearStart(year)
+      if (newStart != null && initialStart != null && newStart < initialStart) {
+        setError(
+          `Cannot roll back to ${year}. The promotion wizard only moves the school forward in time. ` +
+          `View-only access to past years (with the option to switch context to a year that already has records) is coming in a follow-up.`,
+        )
+        return
+      }
     }
 
     // Year change is the bigger deal — always wins over a term-only modal.

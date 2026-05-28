@@ -24,19 +24,28 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
   if (!profile || profile.role !== 'ADMIN') redirect('/dashboard')
 
-  // Pending-approvals badge — flows into the sidebar nav.
-  const { count: pendingCount } = await supabase
-    .from('profiles')
-    .select('id', { count: 'exact', head: true })
-    .eq('status', 'pending')
-    .eq('onboarding_complete', true)
+  // Pending-approvals badge — flows into the sidebar nav. Counts BOTH
+  // pending staff registrations and pending subject-change requests so the
+  // admin sees one number for "things waiting on me".
+  const [{ count: pendingProfiles }, { count: pendingChanges }] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'pending')
+      .eq('onboarding_complete', true),
+    supabase
+      .from('staff_subject_change_requests')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'pending'),
+  ])
+  const pendingCount = (pendingProfiles ?? 0) + (pendingChanges ?? 0)
 
   const schoolName = process.env.NEXT_PUBLIC_SCHOOL_NAME ?? 'My Dream College'
 
   return (
     <AdminShell
       profile={profile}
-      pendingCount={pendingCount ?? 0}
+      pendingCount={pendingCount}
       schoolName={schoolName}
     >
       {children}

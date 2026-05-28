@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import {
   Mail, ShieldCheck, Search as SearchIcon,
-  BookOpen, GraduationCap, ChevronDown, CircleDot,
+  BookOpen, GraduationCap, ChevronDown,
 } from 'lucide-react'
 import SearchInput from '@/components/ui/SearchInput'
 import { cn } from '@/lib/cn'
@@ -107,9 +107,33 @@ function TeacherList({
 function TeacherRow({ row: t, muted }: { row: TeacherRow; muted: boolean }) {
   const [expanded, setExpanded] = useState(false)
   const isAdmin = t.role === 'ADMIN'
-  // Total taught subject-class pairs across the matrix (e.g. "Maths: 1A, 1B" = 2).
   const totalPairs = t.teaches.reduce((sum, x) => sum + x.classes.length, 0)
-  const hasAnyDetail = totalPairs > 0 || t.classTeacherOf || t.registeredSubjects.length > 0
+
+  // The expandable lists EVERY subject the teacher registered for + any
+  // subject they currently teach that wasn't in their registered list. Each
+  // entry is annotated with its assignment status.
+  const subjectBreakdown = useMemo(() => {
+    const teachesBySubject = new Map<string, string[]>()
+    for (const r of t.teaches) teachesBySubject.set(r.subject, r.classes)
+    const registered = new Set(t.registeredSubjects)
+    const seen = new Set<string>()
+    const rows: { subject: string; classes: string[]; status: 'registered' | 'extra' }[] = []
+    for (const s of t.registeredSubjects) {
+      rows.push({ subject: s, classes: teachesBySubject.get(s) ?? [], status: 'registered' })
+      seen.add(s)
+    }
+    // Subjects they teach but didn't register for (legacy / admin assigned).
+    for (const r of t.teaches) {
+      if (!seen.has(r.subject) && !registered.has(r.subject)) {
+        rows.push({ subject: r.subject, classes: r.classes, status: 'extra' })
+      }
+    }
+    return rows
+  }, [t.teaches, t.registeredSubjects])
+
+  const hasExpandable = subjectBreakdown.length > 0 || t.classTeacherOf
+  const assignedCount = subjectBreakdown.filter((r) => r.classes.length > 0).length
+  const totalRegistered = t.registeredSubjects.length
 
   return (
     <div className={cn('px-4 sm:px-5 py-4', muted && 'opacity-90')}>
@@ -147,8 +171,17 @@ function TeacherRow({ row: t, muted }: { row: TeacherRow; muted: boolean }) {
             <Mail className="w-3 h-3 flex-shrink-0" /> {t.email}
           </p>
 
-          {/* At-a-glance summary line: subjects this term */}
-          {totalPairs > 0 ? (
+          {/* At-a-glance summary — counts of registered vs. actually assigned */}
+          {totalRegistered > 0 ? (
+            <p className="text-xs text-ink-muted mt-1.5 flex items-start gap-1.5">
+              <BookOpen className="w-3 h-3 mt-0.5 flex-shrink-0 text-brand-primary" />
+              <span className="min-w-0">
+                <span className="font-medium text-ink">{totalRegistered}</span> registered subject{totalRegistered === 1 ? '' : 's'}
+                {' · '}
+                <span className="font-medium text-ink">{assignedCount}</span> assigned to {totalPairs} class{totalPairs === 1 ? '' : 'es'} this term
+              </span>
+            </p>
+          ) : totalPairs > 0 ? (
             <p className="text-xs text-ink-muted mt-1.5 flex items-start gap-1.5">
               <BookOpen className="w-3 h-3 mt-0.5 flex-shrink-0 text-brand-primary" />
               <span className="min-w-0">
@@ -159,54 +192,62 @@ function TeacherRow({ row: t, muted }: { row: TeacherRow; muted: boolean }) {
                 <span className="text-ink-subtle">· {totalPairs} class assignment{totalPairs === 1 ? '' : 's'}</span>
               </span>
             </p>
-          ) : t.registeredSubjects.length > 0 ? (
-            <p className="text-xs text-ink-subtle mt-1.5 flex items-start gap-1.5">
-              <CircleDot className="w-3 h-3 mt-0.5 flex-shrink-0 text-brand-secondary-dark" />
-              <span className="min-w-0">
-                Registered for{' '}
-                <span className="font-medium text-ink">{t.registeredSubjects.join(', ')}</span>{' '}
-                <span className="text-ink-subtle">· no class assignments this term</span>
-              </span>
-            </p>
           ) : !isAdmin && (
             <p className="text-xs text-ink-subtle mt-1.5 italic">No subjects registered. Use /admin/assignments to set.</p>
           )}
 
-          {/* Expand for per-subject class breakdown */}
-          {hasAnyDetail && totalPairs > 0 && (
+          {/* Expand — shows every registered subject + assignment status */}
+          {hasExpandable && (
             <button
               type="button"
               onClick={() => setExpanded((v) => !v)}
               className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-brand-primary hover:text-brand-primary-dark cursor-pointer"
             >
               <ChevronDown className={cn('w-3 h-3 transition-transform', expanded && 'rotate-180')} />
-              {expanded ? 'Hide breakdown' : 'Show per-subject classes'}
+              {expanded ? 'Hide subjects' : 'Show registered subjects + assignments'}
             </button>
           )}
 
           {expanded && (
-            <ul className="mt-2 space-y-1">
-              {t.teaches.map((row) => (
-                <li
-                  key={row.subject}
-                  className="text-xs flex items-baseline gap-2 px-2 py-1 rounded bg-surface-muted/60"
-                >
-                  <span className="font-semibold text-ink min-w-0 truncate">{row.subject}</span>
-                  <span className="text-ink-subtle">·</span>
-                  <span className="font-mono text-brand-accent">
-                    {row.classes.join(', ')}
-                  </span>
-                </li>
-              ))}
-              {t.registeredSubjects.length > t.teaches.length && (
-                <li className="text-[11px] text-ink-subtle italic mt-1.5">
-                  Registered subjects not currently assigned:{' '}
-                  {t.registeredSubjects
-                    .filter((s) => !t.teaches.some((x) => x.subject === s))
-                    .join(', ') || '—'}
-                </li>
+            <div className="mt-2 space-y-2">
+              {subjectBreakdown.length > 0 ? (
+                <ul className="space-y-1">
+                  {subjectBreakdown.map((row) => {
+                    const assigned = row.classes.length > 0
+                    return (
+                      <li
+                        key={row.subject}
+                        className={cn(
+                          'text-xs flex items-baseline gap-2 px-2 py-1.5 rounded',
+                          assigned ? 'bg-brand-primary-light/40' : 'bg-surface-muted/60',
+                        )}
+                      >
+                        <span className="font-semibold text-ink min-w-0 truncate">{row.subject}</span>
+                        {row.status === 'extra' && (
+                          <span className="text-[9px] uppercase tracking-wider font-semibold bg-brand-secondary-light text-brand-secondary-dark px-1.5 py-0.5 rounded">
+                            unregistered
+                          </span>
+                        )}
+                        <span className="text-ink-subtle">·</span>
+                        {assigned ? (
+                          <span className="font-mono text-brand-accent">{row.classes.join(', ')}</span>
+                        ) : (
+                          <span className="italic text-ink-subtle">unassigned this term</span>
+                        )}
+                      </li>
+                    )
+                  })}
+                </ul>
+              ) : (
+                <p className="text-[11px] text-ink-subtle italic">No subjects on file.</p>
               )}
-            </ul>
+              {t.classTeacherOf && (
+                <p className="text-[11px] text-ink-muted flex items-center gap-1.5">
+                  <GraduationCap className="w-3 h-3 text-brand-accent" />
+                  Class teacher of <span className="font-mono text-ink">{t.classTeacherOf}</span> this term.
+                </p>
+              )}
+            </div>
           )}
         </div>
 

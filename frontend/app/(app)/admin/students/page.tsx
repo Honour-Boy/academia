@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { Plus, BookOpen } from 'lucide-react'
 import EmptyState from '@/components/ui/EmptyState'
+import { getSchoolSettings } from '@/lib/school-settings'
 import StudentsBrowser from './StudentsBrowser'
 
 export const metadata: Metadata = { title: 'Admin · Students' }
@@ -17,6 +18,8 @@ export default async function StudentsPage() {
     .from('profiles').select('role').eq('id', user.id).single()
   if (profile?.role !== 'ADMIN') redirect('/dashboard')
 
+  const { currentTerm: term, currentAcademicYear: year } = await getSchoolSettings()
+
   const { data: students } = await supabase
     .from('students')
     .select(`
@@ -26,13 +29,15 @@ export default async function StudentsPage() {
     .order('full_name')
 
   const rows = (students ?? []).map((s) => {
-    const cls = s.classes as unknown as { name: string } | { name: string }[] | null
+    const cls = s.classes as unknown as { id: string; name: string } | { id: string; name: string }[] | null
+    const c = Array.isArray(cls) ? cls[0] : cls
     return {
       id: s.id as string,
       full_name: s.full_name as string,
       student_number: (s.student_number ?? null) as string | null,
       is_active: s.is_active as boolean,
-      className: (Array.isArray(cls) ? cls[0]?.name : cls?.name) ?? null,
+      classId: c?.id ?? null,
+      className: c?.name ?? null,
     }
   })
 
@@ -46,6 +51,7 @@ export default async function StudentsPage() {
           <h2 className="text-xl sm:text-2xl font-bold text-ink tracking-tight">Students</h2>
           <p className="text-sm text-ink-muted mt-1">
             {active.length} active · {inactive.length} deactivated. Enrol students and pick which subjects they take.
+            <span className="text-ink-subtle"> · Grouped by class for {term} · {year}.</span>
           </p>
         </div>
         <Link href="/admin/students/new" className="btn-brand">
@@ -61,7 +67,7 @@ export default async function StudentsPage() {
           primaryAction={{ label: 'Enrol first student', href: '/admin/students/new' }}
         />
       ) : (
-        <StudentsBrowser rows={rows} />
+        <StudentsBrowser rows={rows} term={term} year={year} />
       )}
     </div>
   )
