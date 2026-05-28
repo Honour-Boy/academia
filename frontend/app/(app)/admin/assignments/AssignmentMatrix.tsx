@@ -71,6 +71,14 @@ export default function AssignmentMatrix({
     [staged, existingForTeacher],
   )
 
+  // In Edit mode, only show subjects the teacher already teaches — keeps the matrix
+  // focused on rows the admin can actually act on (delete-only in Edit).
+  const visibleSubjects = useMemo(() => {
+    if (mode !== 'edit') return subjects
+    const taught = new Set(Object.values(existingForTeacher).map((a) => a.subject_id))
+    return subjects.filter((s) => taught.has(s.id))
+  }, [mode, subjects, existingForTeacher])
+
   function toggleCell(subjectId: string, classId: string) {
     const k = cellKey(subjectId, classId)
     const existing = existingForTeacher[k]
@@ -181,13 +189,21 @@ export default function AssignmentMatrix({
       ) : (
         <>
           <MatrixGrid
-            subjects={subjects}
+            subjects={visibleSubjects}
             classes={classes}
             existingForTeacher={existingForTeacher}
             staged={staged}
             mode={mode}
             onToggle={toggleCell}
           />
+
+          {mode === 'edit' && visibleSubjects.length === 0 && (
+            <div className="rounded-xl border border-dashed border-surface-border bg-surface-muted/60 px-6 py-10 text-center">
+              <Pencil className="w-7 h-7 mx-auto text-brand-accent/60" />
+              <p className="text-sm font-medium text-ink mt-2">No subjects to edit</p>
+              <p className="text-xs text-ink-muted mt-1">This teacher has no current assignments. Switch to Add to attach subjects.</p>
+            </div>
+          )}
 
           {/* Action bar */}
           <div className="sticky bottom-0 -mx-4 sm:-mx-5 px-4 sm:px-5 py-3 bg-white/95 backdrop-blur-md border-t border-surface-border flex items-center gap-3 flex-wrap">
