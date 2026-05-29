@@ -64,6 +64,14 @@ export default async function ProfilePage() {
     isCurrent: currentSessionId === s.id,
   }))
 
+  // Did this user ever set a Supabase password? `identities` reflects each
+  // sign-up/link path the user has taken — 'email' means a password-backed
+  // identity exists, anything else (e.g. 'google') alone means OAuth-only.
+  // We use this to decide whether to render the change-password form (with a
+  // current-password re-auth) or the set-password form (no re-auth, since
+  // there's nothing to re-auth against).
+  const hasPassword = (user.identities ?? []).some((i) => i.provider === 'email')
+
   const initials = profile.full_name
     .split(/\s+/)
     .filter(Boolean)
@@ -171,10 +179,14 @@ export default async function ProfilePage() {
           </span>
           <div>
             <h2 className="text-sm font-semibold text-ink">Password</h2>
-            <p className="text-xs text-ink-muted">Requires your current password to confirm the change.</p>
+            <p className="text-xs text-ink-muted">
+              {hasPassword
+                ? 'Requires your current password to confirm the change.'
+                : 'Set a password as a backup to Google sign-in.'}
+            </p>
           </div>
         </div>
-        <PasswordForm />
+        <PasswordForm hasPassword={hasPassword} />
       </section>
 
       {/* Subjects taught — teachers only. Lets the teacher request a change
