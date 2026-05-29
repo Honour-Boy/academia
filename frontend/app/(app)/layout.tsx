@@ -68,12 +68,31 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     latestYear = years.length > 0 ? years.reduce((a, b) => (a > b ? a : b)) : null
   }
 
+  // For admin users we need the approvals nav-badge count regardless of which
+  // route they're on, because AdminShell is now mounted at this layer (so the
+  // chrome stays consistent on /profile et al, not just /admin/*).
+  let pendingCount = 0
+  if (profile.role === 'ADMIN') {
+    const [{ count: pendingProfiles }, { count: pendingChanges }] = await Promise.all([
+      supabase
+        .from('profiles')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'pending')
+        .eq('onboarding_complete', true),
+      supabase
+        .from('staff_subject_change_requests')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'pending'),
+    ])
+    pendingCount = (pendingProfiles ?? 0) + (pendingChanges ?? 0)
+  }
+
   return (
     <>
       {settings.isViewOnlyYear && latestYear && (
         <ViewOnlyYearBanner currentYear={settings.currentAcademicYear} latestYear={latestYear} />
       )}
-      <AppChrome profile={profile} schoolName={schoolName}>
+      <AppChrome profile={profile} schoolName={schoolName} pendingCount={pendingCount}>
         {children}
       </AppChrome>
     </>
