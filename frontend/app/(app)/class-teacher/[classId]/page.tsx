@@ -4,7 +4,9 @@ import Link from 'next/link'
 import { ChevronLeft, Info } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { getSchoolSettings } from '@/lib/school-settings'
+import { getActiveBehaviourActivities } from '@/lib/behaviour-server'
 import ClassTeacherSheet from '@/components/grades/ClassTeacherSheet'
+import BehaviourMatrix from '@/components/grades/BehaviourMatrix'
 import DownloadClassZipButton from '@/app/(app)/admin/reports/DownloadClassZipButton'
 import type { StudentRemark } from '@/types'
 
@@ -46,6 +48,8 @@ export default async function ClassTeacherPage({ params, searchParams }: Props) 
     { data: classData },
     { data: students },
     { data: remarks },
+    activities,
+    { data: behaviourScores },
   ] = await Promise.all([
     supabase.from('classes').select('*').eq('id', classId).single(),
     supabase.from('students').select('*').eq('class_id', classId).eq('is_active', true).order('full_name'),
@@ -55,12 +59,29 @@ export default async function ClassTeacherPage({ params, searchParams }: Props) 
       .eq('class_id', classId)
       .eq('term', term)
       .eq('academic_year', year),
+    getActiveBehaviourActivities(),
+    supabase
+      .from('student_behaviour_scores')
+      .select('student_id, activity_id, score')
+      .eq('term', term)
+      .eq('academic_year', year),
   ])
 
   if (!classData) notFound()
 
   const remarkMap: Record<string, StudentRemark> = {}
   for (const r of remarks ?? []) remarkMap[r.student_id] = r as StudentRemark
+
+  // Build a (studentId, activityId) → score map scoped to this class.
+  const studentIds = new Set((students ?? []).map((s: any) => s.id as string))
+  const behaviourMap: Record<string, Record<string, number>> = {}
+  for (const row of behaviourScores ?? []) {
+    const sid = (row as any).student_id as string
+    if (!studentIds.has(sid)) continue
+    const aid = (row as any).activity_id as string
+    if (!behaviourMap[sid]) behaviourMap[sid] = {}
+    behaviourMap[sid][aid] = (row as any).score as number
+  }
 
   const filled = Object.keys(remarkMap).length
   const total = students?.length ?? 0
@@ -124,7 +145,7 @@ export default async function ClassTeacherPage({ params, searchParams }: Props) 
         )}
       </div>
 
-      <div className="px-4 sm:px-6 py-4">
+      <div className="px-4 sm:px-6 py-4 space-y-6">
         <ClassTeacherSheet
           students={students ?? []}
           remarks={remarkMap}
@@ -132,6 +153,16 @@ export default async function ClassTeacherPage({ params, searchParams }: Props) 
           term={term}
           academicYear={year}
         />
+
+        {activities.length > 0 && (students ?? []).length > 0 && (
+          <BehaviourMatrix
+            students={students ?? []}
+            activities={activities}
+            initialScores={behaviourMap}
+            term={term}
+            academicYear={year}
+          />
+        )}
       </div>
     </div>
   )
