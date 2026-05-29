@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { requireAuth } from '../middleware/requireAuth'
 import { requireRole } from '../middleware/requireRole'
+import { gradeWriteLimiter } from '../middleware/rateLimit'
 import { adminClient } from '../lib/supabase'
 import {
   RAW_SCORE_CEILING,
@@ -84,7 +85,7 @@ gradesRouter.get('/', async (req, res) => {
  * Update a single grade score. Teacher must own the row's class+subject;
  * score must be within the component's max_score.
  */
-gradesRouter.put('/:id', async (req, res) => {
+gradesRouter.put('/:id', gradeWriteLimiter, async (req, res) => {
   const paramParsed = idParam.safeParse(req.params)
   if (!paramParsed.success) {
     res.status(400).json({ error: 'Invalid id' })

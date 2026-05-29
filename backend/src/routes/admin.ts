@@ -3,6 +3,7 @@ import archiver from 'archiver'
 import { z } from 'zod'
 import { requireAuth } from '../middleware/requireAuth'
 import { requireRole } from '../middleware/requireRole'
+import { heavyExportLimiter } from '../middleware/rateLimit'
 import { adminClient } from '../lib/supabase'
 import { academicYearSchema, termSchema, uuidSchema } from '../lib/validators'
 
@@ -240,7 +241,7 @@ const gradesExportQuery = z.object({
   classId: uuidSchema.optional(),
 })
 
-adminRouter.get('/grades-export', async (req, res) => {
+adminRouter.get('/grades-export', heavyExportLimiter, async (req, res) => {
   const parsedQuery = gradesExportQuery.safeParse(req.query)
   if (!parsedQuery.success) {
     res.status(400).json({ error: 'Invalid query parameters' })
@@ -397,7 +398,7 @@ adminRouter.get('/audit', async (req, res) => {
  *
  * The :year param is URL-encoded ("2025%2F2026").
  */
-adminRouter.get('/year-archive/:year/export', async (req, res) => {
+adminRouter.get<{ year: string }>('/year-archive/:year/export', heavyExportLimiter, async (req, res) => {
   const year = decodeURIComponent(req.params.year)
   if (!year || !/^\d{4}\/\d{4}$/.test(year)) {
     res.status(400).json({ error: 'Invalid academic_year' })

@@ -4,6 +4,7 @@ import archiver from 'archiver'
 import { z } from 'zod'
 import { requireAuth } from '../middleware/requireAuth'
 import { requireRole } from '../middleware/requireRole'
+import { heavyExportLimiter } from '../middleware/rateLimit'
 import { adminClient } from '../lib/supabase'
 import { defaultTemplate } from '../templates/parser'
 import { streamReportPDF, type ReportData, type SubjectScore, type BehaviourActivityScore } from '../templates/generator'
@@ -393,7 +394,7 @@ const singleReportQuery = z.object({
   year: academicYearSchema.optional(),
 })
 
-reportsRouter.get('/student/:id', async (req, res) => {
+reportsRouter.get('/student/:id', heavyExportLimiter, async (req, res) => {
   // Single-student PDF preview is admin-only (used by /admin/reports).
   if (req.role !== 'ADMIN') {
     res.status(403).send()
@@ -436,7 +437,7 @@ const bulkBody = z.object({
   academicYear: academicYearSchema,
 })
 
-reportsRouter.post('/bulk', async (req, res) => {
+reportsRouter.post('/bulk', heavyExportLimiter, async (req, res) => {
   const parsed = bulkBody.safeParse(req.body)
   if (!parsed.success) {
     res.status(400).json({ error: 'Invalid body' })
