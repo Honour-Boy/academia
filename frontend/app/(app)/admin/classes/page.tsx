@@ -51,7 +51,7 @@ export default async function ClassesAdminPage() {
             Create classes and assign class (homeroom) teachers for <span className="font-medium text-ink">{term} · {year}</span>.
           </p>
           <p className="text-xs text-ink-subtle mt-1">
-            A teacher can hold only one class-teacher slot per term, so teachers already assigned elsewhere are hidden from other dropdowns. Use <span className="font-semibold">Assign all</span> to save multiple edits at once.
+            A teacher can hold only one class-teacher slot per term — teachers already assigned to another class appear disabled here with a label so you can see where they went. Use <span className="font-semibold">Assign all</span> to save multiple edits at once.
           </p>
         </div>
         <CreateClassDialog />

@@ -192,7 +192,7 @@ export default function RolloverWizard({ students, classes, currentYear, newYear
   return (
     <div className="space-y-4">
       {/* Sticky summary + apply bar */}
-      <div className="sticky top-[68px] z-20 -mx-3 sm:mx-0">
+      <div className="sticky top-16 z-20 -mx-3 sm:mx-0">
         <div className="card flex items-center gap-3 px-4 py-3 shadow-md ring-1 ring-brand-primary/30 bg-brand-primary-light/40">
           <div className="text-xs text-ink flex-1 min-w-0 flex flex-wrap items-center gap-x-3 gap-y-1">
             <span className="font-semibold">{students.length} students</span>

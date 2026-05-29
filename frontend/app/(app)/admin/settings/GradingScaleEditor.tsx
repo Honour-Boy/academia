@@ -108,11 +108,19 @@ export default function GradingScaleEditor({ initial }: Props) {
         {rows.map((r, idx) => {
           const upperBound = idx === 0 ? 100 : rows[idx - 1].min_percentage - 1
           return (
+            // CSS grid with named template-areas: mobile stacks the
+            // description onto a second row so the input stays usable at
+            // 320 px. sm:grid-cols + auto rows return us to the original
+            // 1-row 5-column layout on tablet+.
             <div
               key={idx}
-              className="grid grid-cols-[auto_5rem_5rem_1fr_auto] gap-2 items-center bg-surface-muted/40 border border-surface-border rounded-lg px-2 py-2"
+              className="grid gap-2 items-center bg-surface-muted/40 border border-surface-border rounded-lg px-2 py-2
+                grid-cols-[auto_5rem_5rem_auto]
+                [grid-template-areas:'ctl_letter_pct_del'_'desc_desc_desc_desc']
+                sm:grid-cols-[auto_5rem_5rem_1fr_auto]
+                sm:[grid-template-areas:'ctl_letter_pct_desc_del']"
             >
-              <div className="flex flex-col">
+              <div className="flex flex-col flex-shrink-0 [grid-area:ctl]">
                 <button
                   type="button"
                   aria-label="Move up"
@@ -139,7 +147,7 @@ export default function GradingScaleEditor({ initial }: Props) {
                 onChange={(e) => update(idx, { letter: e.target.value.toUpperCase() })}
                 placeholder="A1"
                 maxLength={4}
-                className={`input-brand text-center font-bold font-mono px-1 ${letterClasses(r.letter.trim())}`}
+                className={`input-brand text-center font-bold font-mono px-1 [grid-area:letter] ${letterClasses(r.letter.trim())}`}
               />
 
               <input
@@ -150,10 +158,10 @@ export default function GradingScaleEditor({ initial }: Props) {
                 step={1}
                 value={r.min_percentage}
                 onChange={(e) => update(idx, { min_percentage: parseInt(e.target.value || '0', 10) || 0 })}
-                className="input-brand text-center font-mono px-1"
+                className="input-brand text-center font-mono px-1 [grid-area:pct]"
               />
 
-              <div className="flex items-center gap-2 min-w-0">
+              <div className="flex items-center gap-2 min-w-0 [grid-area:desc]">
                 <input
                   aria-label="Description"
                   value={r.description}
@@ -171,7 +179,7 @@ export default function GradingScaleEditor({ initial }: Props) {
                 aria-label="Remove letter"
                 onClick={() => remove(idx)}
                 disabled={rows.length <= 1}
-                className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-ink-subtle hover:text-red-600 hover:bg-red-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-ink-subtle hover:text-red-600 hover:bg-red-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0 [grid-area:del]"
               >
                 <Trash2 className="w-4 h-4" />
               </button>
