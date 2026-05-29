@@ -7,6 +7,7 @@ import { requireRole } from '../middleware/requireRole'
 import { adminClient } from '../lib/supabase'
 import { defaultTemplate } from '../templates/parser'
 import { streamReportPDF, type ReportData, type SubjectScore } from '../templates/generator'
+import { academicYearSchema, termSchema, uuidSchema } from '../lib/validators'
 
 export const reportsRouter = Router()
 
@@ -178,16 +179,32 @@ function percentageToGrade(p: number): string {
  * GET /reports/student/:id?term=&year=
  * Streams a single student's PDF report.
  */
+const singleReportParam = z.object({ id: uuidSchema })
+const singleReportQuery = z.object({
+  term: termSchema.optional(),
+  year: academicYearSchema.optional(),
+})
+
 reportsRouter.get('/student/:id', async (req, res) => {
   // Single-student PDF preview is admin-only (used by /admin/reports).
   if (req.role !== 'ADMIN') {
     res.status(403).send()
     return
   }
-  const term = (req.query.term as string) ?? 'First Term'
-  const year = (req.query.year as string) ?? '2025/2026'
+  const paramParsed = singleReportParam.safeParse(req.params)
+  if (!paramParsed.success) {
+    res.status(400).json({ error: 'Invalid id' })
+    return
+  }
+  const queryParsed = singleReportQuery.safeParse(req.query)
+  if (!queryParsed.success) {
+    res.status(400).json({ error: 'Invalid query parameters' })
+    return
+  }
+  const term = queryParsed.data.term ?? 'First Term'
+  const year = queryParsed.data.year ?? '2025/2026'
 
-  const reportData = await buildReportData(req.params.id, term, year)
+  const reportData = await buildReportData(paramParsed.data.id, term, year)
   if (!reportData) {
     res.status(404).json({ error: 'Student not found' })
     return
@@ -206,9 +223,9 @@ reportsRouter.get('/student/:id', async (req, res) => {
  * Returns a ZIP of all student PDFs.
  */
 const bulkBody = z.object({
-  studentIds: z.array(z.string().uuid()).min(1).max(100),
-  term: z.string().min(1),
-  academicYear: z.string().min(1),
+  studentIds: z.array(uuidSchema).min(1).max(100),
+  term: termSchema,
+  academicYear: academicYearSchema,
 })
 
 reportsRouter.post('/bulk', async (req, res) => {

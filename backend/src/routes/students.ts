@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { requireAuth } from '../middleware/requireAuth'
 import { requireRole } from '../middleware/requireRole'
 import { adminClient } from '../lib/supabase'
+import { teacherCanSeeStudent, uuidSchema } from '../lib/validators'
 
 export const studentsRouter = Router()
 
@@ -30,10 +31,21 @@ const updateSubjectsBody = z.object({
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
+const listQuery = z.object({
+  classId: uuidSchema.optional(),
+  subjectId: uuidSchema.optional(),
+})
+
+const idParam = z.object({ id: uuidSchema })
+
 /** GET /students?classId= */
 studentsRouter.get('/', async (req, res) => {
-  const classId = req.query.classId as string | undefined
-  const subjectId = req.query.subjectId as string | undefined
+  const parsedQuery = listQuery.safeParse(req.query)
+  if (!parsedQuery.success) {
+    res.status(400).json({ error: 'Invalid query parameters' })
+    return
+  }
+  const { classId, subjectId } = parsedQuery.data
   const userId = req.user!.id
   const role = req.role
 
@@ -93,6 +105,7 @@ studentsRouter.get('/', async (req, res) => {
   const { data, error } = await query
 
   if (error) {
+    console.error('[students GET] supabase error:', error)
     res.status(500).json({ error: 'Failed to fetch students' })
     return
   }
@@ -104,7 +117,9 @@ studentsRouter.get('/', async (req, res) => {
 studentsRouter.post('/', requireRole(['ADMIN']), async (req, res) => {
   const parsed = enrollBody.safeParse(req.body)
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.issues[0].message })
+    // Don't echo zod's internal error text — uniform "Invalid body" so the
+    // surface isn't probable for field-name enumeration.
+    res.status(400).json({ error: 'Invalid body' })
     return
   }
 
@@ -118,6 +133,7 @@ studentsRouter.post('/', requireRole(['ADMIN']), async (req, res) => {
     .single()
 
   if (studentErr) {
+    console.error('[students POST] insert error:', studentErr)
     res.status(500).json({ error: 'Failed to enroll student' })
     return
   }
@@ -128,6 +144,7 @@ studentsRouter.post('/', requireRole(['ADMIN']), async (req, res) => {
     .insert(subject_ids.map((sid: string) => ({ student_id: student.id, subject_id: sid })))
 
   if (subjectErr) {
+    console.error('[students POST] subjects insert error:', subjectErr)
     // Rollback student if subjects fail
     await adminClient.from('students').delete().eq('id', student.id)
     res.status(500).json({ error: 'Failed to save subject enrollments' })
@@ -139,6 +156,11 @@ studentsRouter.post('/', requireRole(['ADMIN']), async (req, res) => {
 
 /** PATCH /students/:id — ADMIN only */
 studentsRouter.patch('/:id', requireRole(['ADMIN']), async (req, res) => {
+  const paramParsed = idParam.safeParse(req.params)
+  if (!paramParsed.success) {
+    res.status(400).json({ error: 'Invalid id' })
+    return
+  }
   const parsed = updateBody.safeParse(req.body)
   if (!parsed.success) {
     res.status(400).json({ error: 'Invalid body' })
@@ -148,11 +170,12 @@ studentsRouter.patch('/:id', requireRole(['ADMIN']), async (req, res) => {
   const { data, error } = await adminClient
     .from('students')
     .update(parsed.data)
-    .eq('id', req.params.id)
+    .eq('id', paramParsed.data.id)
     .select()
     .single()
 
   if (error) {
+    console.error('[students PATCH] error:', error)
     res.status(500).json({ error: 'Failed to update student' })
     return
   }
@@ -162,13 +185,18 @@ studentsRouter.patch('/:id', requireRole(['ADMIN']), async (req, res) => {
 
 /** PUT /students/:id/subjects — ADMIN only: replace subject enrollments */
 studentsRouter.put('/:id/subjects', requireRole(['ADMIN']), async (req, res) => {
+  const paramParsed = idParam.safeParse(req.params)
+  if (!paramParsed.success) {
+    res.status(400).json({ error: 'Invalid id' })
+    return
+  }
   const parsed = updateSubjectsBody.safeParse(req.body)
   if (!parsed.success) {
     res.status(400).json({ error: 'Invalid body' })
     return
   }
 
-  const studentId = req.params.id
+  const studentId = paramParsed.data.id
 
   // Delete existing and re-insert
   await adminClient.from('student_subjects').delete().eq('student_id', studentId)
@@ -178,6 +206,7 @@ studentsRouter.put('/:id/subjects', requireRole(['ADMIN']), async (req, res) => 
     .insert(parsed.data.subject_ids.map((sid: string) => ({ student_id: studentId, subject_id: sid })))
 
   if (error) {
+    console.error('[students PUT subjects] error:', error)
     res.status(500).json({ error: 'Failed to update subject enrollments' })
     return
   }
@@ -185,14 +214,34 @@ studentsRouter.put('/:id/subjects', requireRole(['ADMIN']), async (req, res) => 
   res.status(204).send()
 })
 
-/** GET /students/:id/subjects — enrolled subjects for a student */
+/**
+ * GET /students/:id/subjects — enrolled subjects for a student.
+ * IDOR guard: a TEACHER must be a subject teacher for the student's class OR
+ * its class teacher. Otherwise 403. Admin sees all.
+ */
 studentsRouter.get('/:id/subjects', async (req, res) => {
+  const paramParsed = idParam.safeParse(req.params)
+  if (!paramParsed.success) {
+    res.status(400).json({ error: 'Invalid id' })
+    return
+  }
+  const studentId = paramParsed.data.id
+
+  if (req.role === 'TEACHER') {
+    const allowed = await teacherCanSeeStudent(req.user!.id, studentId)
+    if (!allowed) {
+      res.status(403).send()
+      return
+    }
+  }
+
   const { data, error } = await adminClient
     .from('student_subjects')
     .select('*, subjects(id, name)')
-    .eq('student_id', req.params.id)
+    .eq('student_id', studentId)
 
   if (error) {
+    console.error('[students GET subjects] error:', error)
     res.status(500).json({ error: 'Failed to fetch subjects' })
     return
   }
