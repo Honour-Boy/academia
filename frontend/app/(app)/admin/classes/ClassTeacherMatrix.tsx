@@ -44,8 +44,10 @@ export default function ClassTeacherMatrix({
   const [savingRow, setSavingRow] = useState<string | null>(null)
   const [bulkPending, startBulk] = useTransition()
 
-  // Teacher IDs currently in use across drafts. Used to hide them from other
-  // class dropdowns — a teacher can only be class teacher for one class.
+  // Teacher IDs currently in use across drafts. Used to disable them in other
+  // class dropdowns (with a "(assigned to JSS 1A)" hint) so the admin can see
+  // *why* a teacher can't be picked, rather than silently filtering them out.
+  // A teacher can only hold one class-teacher slot per term.
   const usedByDraft = useMemo(() => {
     const map = new Map<string, string>() // teacherId → classId
     for (const [classId, teacherId] of Object.entries(drafts)) {
@@ -53,6 +55,13 @@ export default function ClassTeacherMatrix({
     }
     return map
   }, [drafts])
+
+  // Class lookup so we can render the "(assigned to <className>)" hint.
+  const classNameById = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const c of classes) m.set(c.id, c.name)
+    return m
+  }, [classes])
 
   function setDraft(classId: string, teacherId: string) {
     setDrafts((d) => ({ ...d, [classId]: teacherId }))
@@ -152,16 +161,22 @@ export default function ClassTeacherMatrix({
           const isAssigned = !!baselineTeacherId
           const isSaving = savingRow === cls.id
 
-          // A teacher can only hold one class-teacher slot per term. Hide
-          // teachers picked elsewhere in the draft. Always keep the teacher
-          // selected for THIS row visible.
-          const options = teachers
-            .filter((t) => {
-              const usedByOther = usedByDraft.get(t.id)
-              if (!usedByOther) return true
-              return usedByOther === cls.id
-            })
-            .map((t) => ({ value: t.id, label: t.full_name }))
+          // A teacher can only hold one class-teacher slot per term. Keep
+          // every teacher visible — disable the ones already drafted on
+          // another class and show *which* class so the admin understands
+          // why they can't pick them again here.
+          const options = teachers.map((t) => {
+            const usedByOther = usedByDraft.get(t.id)
+            const conflict = usedByOther && usedByOther !== cls.id
+            return {
+              value: t.id,
+              label: t.full_name,
+              disabled: !!conflict,
+              secondary: conflict
+                ? `assigned to ${classNameById.get(usedByOther!) ?? usedByOther}`
+                : undefined,
+            }
+          })
 
           return (
             <div
