@@ -43,20 +43,31 @@ export default async function DashboardPage() {
     .eq('academic_year', year)
     .eq('teacher_id', user.id)
 
+  // Components count is fixed for the whole school (CA1 / CA2 / Exam = 3).
+  // Pull it once so per-subject math has the right denominator.
+  const { count: componentCount } = await supabase
+    .from('score_components')
+    .select('id', { count: 'exact', head: true })
+
   const enrichedSubject = await Promise.all(
     (subjectAssignments ?? []).map(async (a: any) => {
       const classId = a.classes?.id
       const subjectId = a.subjects?.id
 
-      const [{ count: totalStudents }, { count: gradedStudents }] = await Promise.all([
+      const [{ count: totalStudents }, { data: gradeRows }] = await Promise.all([
         supabase
           .from('students')
           .select('id', { count: 'exact', head: true })
           .eq('class_id', classId)
           .eq('is_active', true),
+        // Pull all (non-null) grade rows so we can count unique students
+        // who have a FILLED row for every component. Previously this used a
+        // count of grade rows directly — for 3 components per student, a
+        // 5-student class with full grades reported 15 in a 8-student
+        // denominator, hence "15/8 = 188%".
         supabase
           .from('grades')
-          .select('student_id', { count: 'exact', head: true })
+          .select('student_id, component_id')
           .eq('class_id', classId)
           .eq('subject_id', subjectId)
           .eq('term', term)
@@ -64,14 +75,33 @@ export default async function DashboardPage() {
           .not('score', 'is', null),
       ])
 
-      return { ...a, totalStudents: totalStudents ?? 0, gradedStudents: gradedStudents ?? 0 }
+      const byStudent = new Map<string, Set<string>>()
+      for (const g of (gradeRows ?? []) as { student_id: string; component_id: string }[]) {
+        const set = byStudent.get(g.student_id) ?? new Set<string>()
+        set.add(g.component_id)
+        byStudent.set(g.student_id, set)
+      }
+      const compsNeeded = componentCount ?? 0
+      const gradedStudents = compsNeeded > 0
+        ? Array.from(byStudent.values()).filter((s) => s.size >= compsNeeded).length
+        : 0
+
+      return {
+        ...a,
+        totalStudents: totalStudents ?? 0,
+        gradedStudents,
+        filledSlots: (gradeRows ?? []).length,
+      }
     }),
   )
 
   const subjectCount = enrichedSubject.length
   const classCount = (classTeacherAssignments ?? []).length
-  const totalSlots = enrichedSubject.reduce((s, a) => s + a.totalStudents, 0)
-  const filledSlots = enrichedSubject.reduce((s, a) => s + a.gradedStudents, 0)
+  const compsPerSubject = componentCount ?? 0
+  // "Score slots" = students × components per subject. Apples-to-apples
+  // denominator for the filled-rows numerator.
+  const totalSlots = enrichedSubject.reduce((s, a) => s + a.totalStudents * compsPerSubject, 0)
+  const filledSlots = enrichedSubject.reduce((s, a) => s + a.filledSlots, 0)
   const completionPct = totalSlots > 0 ? Math.round((filledSlots / totalSlots) * 100) : 0
   const hasAnyAssignment = subjectCount + classCount > 0
 

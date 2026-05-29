@@ -6,7 +6,8 @@ import { computeClassRows, classStats } from '@/lib/grade-utils'
 import { getSchoolSettings } from '@/lib/school-settings'
 import type { Grade, ScoreComponent, Student } from '@/types'
 import Link from 'next/link'
-import { ChevronLeft } from 'lucide-react'
+import { ChevronLeft, Users, BookX } from 'lucide-react'
+import EmptyState from '@/components/ui/EmptyState'
 
 interface Props {
   params: { classId: string; subjectId: string }
@@ -35,13 +36,20 @@ export default async function GradeEntryPage({ params, searchParams }: Props) {
     .single()
 
   if (profile?.role === 'TEACHER') {
+    // Use maybeSingle() with no row limit fanout — a teacher can legitimately
+    // have multiple assignments for the same (class, subject) across terms
+    // after a term carry-forward. The OLD .single() call errored out with
+    // "JSON object requested, multiple rows" and silently rendered notFound(),
+    // which the user saw as a "blank" grade-entry page. `.limit(1)` collapses
+    // to at most one row; any match means they're authorised to be here.
     const { data: assignment } = await supabase
       .from('teacher_assignments')
       .select('id')
       .eq('teacher_id', user.id)
       .eq('class_id', classId)
       .eq('subject_id', subjectId)
-      .single()
+      .limit(1)
+      .maybeSingle()
 
     if (!assignment) notFound()
   }
@@ -95,9 +103,16 @@ export default async function GradeEntryPage({ params, searchParams }: Props) {
     enrolledIds = (enrollments ?? []).map((e: { student_id: string }) => e.student_id)
   }
 
+  // Three states for the roster:
+  //   - some students in this class are enrolled in this subject → show those
+  //   - none of the class students are enrolled in this subject → empty state
+  //     (admin needs to add the subject to those students)
+  //   - the class has no active students at all → different empty state
+  const classHasNoStudents = classStudentIds.length === 0
+  const noOneEnrolledInSubject = !classHasNoStudents && enrolledIds.length === 0
   const students = enrolledIds.length > 0
     ? (classStudents ?? []).filter((s: { id: string }) => enrolledIds.includes(s.id))
-    : classStudents ?? []
+    : []
 
   if (!classData || !subjectData) notFound()
 
@@ -150,14 +165,28 @@ export default async function GradeEntryPage({ params, searchParams }: Props) {
         </div>
       </div>
 
-      <GradeEntryGrid
-        rows={rows}
-        components={(components ?? []) as ScoreComponent[]}
-        classId={classId}
-        subjectId={subjectId}
-        term={term}
-        academicYear={year}
-      />
+      {classHasNoStudents ? (
+        <EmptyState
+          icon={Users}
+          title="No active students in this class"
+          description={`${classData.name} has no active students yet. Ask an admin to enrol students from /admin/students.`}
+        />
+      ) : noOneEnrolledInSubject ? (
+        <EmptyState
+          icon={BookX}
+          title="No students enrolled in this subject"
+          description={`${classData.name} has ${classStudentIds.length} active student${classStudentIds.length === 1 ? '' : 's'}, but none of them are enrolled in ${subjectData.name}. An admin needs to add ${subjectData.name} to a student's subject list on /admin/students/[id] before you can grade them.`}
+        />
+      ) : (
+        <GradeEntryGrid
+          rows={rows}
+          components={(components ?? []) as ScoreComponent[]}
+          classId={classId}
+          subjectId={subjectId}
+          term={term}
+          academicYear={year}
+        />
+      )}
     </div>
   )
 }
