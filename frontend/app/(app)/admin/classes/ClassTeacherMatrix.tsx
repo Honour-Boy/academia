@@ -123,9 +123,11 @@ export default function ClassTeacherMatrix({
 
   return (
     <div className="space-y-4">
-      {/* Sticky bulk-save bar (only when there are unsaved changes) */}
+      {/* Sticky bulk-save bar (only when there are unsaved changes).
+          top-16 matches AdminShell's 64px topbar so the bar sits flush
+          underneath when scrolled. */}
       {dirtyClassIds.length > 0 && (
-        <div className="sticky top-[68px] z-20 -mx-3 sm:mx-0">
+        <div className="sticky top-16 z-20 -mx-3 sm:mx-0">
           <div className="card flex items-center gap-3 px-4 py-3 shadow-md ring-1 ring-brand-primary/30 bg-brand-primary-light/40">
             <Save className="w-4 h-4 text-brand-primary-dark flex-shrink-0" />
             <p className="text-sm text-ink flex-1 min-w-0 truncate">
