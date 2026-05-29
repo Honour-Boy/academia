@@ -50,3 +50,82 @@ export async function denyStaffAction(profileId: string) {
   revalidatePath('/admin')
   return { success: true }
 }
+
+// ── Subject change requests ──────────────────────────────────────────────────
+
+/**
+ * Approve a pending subject-change request: replace the teacher's
+ * staff_subject_requests rows with the proposed list, mark the request approved,
+ * and stamp the reviewer. The grade-entry / matrix filters all read from
+ * staff_subject_requests so the change takes effect immediately.
+ */
+export async function approveSubjectChangeAction(requestId: string) {
+  const admin = await requireAdmin()
+  if (!admin) return { error: 'Unauthorised' }
+
+  // Pull the request + proposed subjects atomically.
+  const { data: req } = await admin
+    .from('staff_subject_change_requests')
+    .select('id, profile_id, status')
+    .eq('id', requestId)
+    .eq('status', 'pending')
+    .maybeSingle()
+  if (!req) return { error: 'Request not found or already reviewed.' }
+
+  const { data: proposed } = await admin
+    .from('staff_subject_change_request_subjects')
+    .select('subject_id')
+    .eq('request_id', requestId)
+  const subjectIds = (proposed ?? []).map((r) => r.subject_id as string)
+
+  // Replace the teacher's registered subjects with the proposed list.
+  await admin.from('staff_subject_requests').delete().eq('profile_id', req.profile_id)
+  if (subjectIds.length > 0) {
+    const { error: insErr } = await admin
+      .from('staff_subject_requests')
+      .insert(subjectIds.map((sid) => ({ profile_id: req.profile_id, subject_id: sid })))
+    if (insErr) return { error: 'Failed to apply the new subject list.' }
+  }
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  const { error: statusErr } = await admin
+    .from('staff_subject_change_requests')
+    .update({
+      status: 'approved',
+      reviewed_at: new Date().toISOString(),
+      reviewed_by: user?.id ?? null,
+    })
+    .eq('id', requestId)
+  if (statusErr) return { error: 'Applied changes but failed to mark approved.' }
+
+  revalidatePath('/admin/approvals')
+  revalidatePath('/admin')
+  revalidatePath('/admin/teachers')
+  revalidatePath('/admin/assignments')
+  return { success: true }
+}
+
+/** Deny a subject-change request — no DB writes to staff_subject_requests. */
+export async function denySubjectChangeAction(requestId: string) {
+  const admin = await requireAdmin()
+  if (!admin) return { error: 'Unauthorised' }
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  const { error } = await admin
+    .from('staff_subject_change_requests')
+    .update({
+      status: 'denied',
+      reviewed_at: new Date().toISOString(),
+      reviewed_by: user?.id ?? null,
+    })
+    .eq('id', requestId)
+    .eq('status', 'pending')
+  if (error) return { error: 'Failed to deny the request.' }
+
+  revalidatePath('/admin/approvals')
+  revalidatePath('/admin')
+  return { success: true }
+}

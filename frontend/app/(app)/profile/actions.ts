@@ -116,3 +116,75 @@ export async function signOutEverywhereAction(): Promise<
   // forcing it here keeps the UX tight if the action returns inline.
   redirect('/login?reason=signed-out-everywhere')
 }
+
+// ── Subject change request (teacher → admin) ─────────────────────────────────
+
+/**
+ * Submit (or replace) a pending subject-change request. Teacher picks the
+ * full new list of subjects they want to teach; admin reviews and approves
+ * via /admin/approvals. The partial-unique index on staff_subject_change_requests
+ * ensures at most one pending request per teacher.
+ */
+export async function submitSubjectChangeRequestAction(input: {
+  subjectIds: string[]
+}): Promise<{ error: string } | { success: true }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
+
+  if (input.subjectIds.length === 0) {
+    return { error: 'Pick at least one subject — to drop all subjects, ask an admin.' }
+  }
+
+  const admin = createAdminClient()
+
+  // Replace any existing pending request — there can only be one at a time
+  // (partial unique index), so wipe first then insert clean.
+  await admin
+    .from('staff_subject_change_requests')
+    .delete()
+    .eq('profile_id', user.id)
+    .eq('status', 'pending')
+
+  const { data: req, error: insErr } = await admin
+    .from('staff_subject_change_requests')
+    .insert({ profile_id: user.id, status: 'pending' })
+    .select('id')
+    .single()
+  if (insErr || !req) return { error: 'Failed to submit your request. Try again.' }
+
+  const { error: subjErr } = await admin
+    .from('staff_subject_change_request_subjects')
+    .insert(input.subjectIds.map((sid) => ({ request_id: req.id, subject_id: sid })))
+  if (subjErr) {
+    // Undo the parent row so we don't leave a half-formed request.
+    await admin.from('staff_subject_change_requests').delete().eq('id', req.id)
+    return { error: 'Failed to save proposed subjects.' }
+  }
+
+  revalidatePath('/profile')
+  revalidatePath('/admin/approvals')
+  return { success: true }
+}
+
+/** Withdraw an in-flight pending request. */
+export async function cancelSubjectChangeRequestAction(
+  requestId: string,
+): Promise<{ error: string } | { success: true }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
+
+  const admin = createAdminClient()
+  const { error } = await admin
+    .from('staff_subject_change_requests')
+    .delete()
+    .eq('id', requestId)
+    .eq('profile_id', user.id)
+    .eq('status', 'pending')
+  if (error) return { error: 'Failed to cancel the request.' }
+
+  revalidatePath('/profile')
+  revalidatePath('/admin/approvals')
+  return { success: true }
+}

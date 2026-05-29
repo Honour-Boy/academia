@@ -1,9 +1,11 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
-import { User, Mail, KeyRound, ShieldCheck, Monitor } from 'lucide-react'
+import Link from 'next/link'
+import { User, Mail, KeyRound, ShieldCheck, Monitor, ChevronLeft, BookOpen } from 'lucide-react'
 import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { IdentityForm, PasswordForm } from './ProfileForms'
 import SessionsCard, { type SessionRow } from './SessionsCard'
+import SubjectChangeRequestForm from './SubjectChangeRequestForm'
 
 // Pull the session_id claim out of a Supabase JWT without bringing in a JWT
 // library. The payload is the middle segment; URL-safe base64.
@@ -71,8 +73,54 @@ export default async function ProfilePage() {
 
   const isAdmin = profile.role === 'ADMIN'
 
+  // For the subject change request section (TEACHER only): fetch the catalogue,
+  // the teacher's current registered subjects, and any existing pending request.
+  let availableSubjects: { id: string; name: string }[] = []
+  let currentSubjectIds: string[] = []
+  let pendingRequest: {
+    id: string; created_at: string; subjectIds: string[]
+  } | null = null
+
+  if (!isAdmin) {
+    const [{ data: allSubjects }, { data: currentReqs }] = await Promise.all([
+      supabase.from('subjects').select('id, name').order('name'),
+      supabase.from('staff_subject_requests').select('subject_id').eq('profile_id', user.id),
+    ])
+    availableSubjects = (allSubjects ?? []).map((s) => ({ id: s.id, name: s.name }))
+    currentSubjectIds = (currentReqs ?? []).map((r) => r.subject_id as string)
+
+    const { data: pendingRow } = await supabase
+      .from('staff_subject_change_requests')
+      .select('id, created_at')
+      .eq('profile_id', user.id)
+      .eq('status', 'pending')
+      .maybeSingle()
+    if (pendingRow) {
+      const { data: pendingSubjects } = await supabase
+        .from('staff_subject_change_request_subjects')
+        .select('subject_id')
+        .eq('request_id', pendingRow.id)
+      pendingRequest = {
+        id: pendingRow.id,
+        created_at: pendingRow.created_at,
+        subjectIds: (pendingSubjects ?? []).map((r) => r.subject_id as string),
+      }
+    }
+  }
+
+  // Back link target — admins came from AdminShell; teachers from dashboard.
+  const backHref = isAdmin ? '/admin' : '/dashboard'
+  const backLabel = isAdmin ? 'Back to admin console' : 'Back to dashboard'
+
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 animate-fade-in-up">
+      <Link
+        href={backHref}
+        className="inline-flex items-center gap-1 text-sm text-ink-muted hover:text-brand-primary transition-colors"
+      >
+        <ChevronLeft className="w-4 h-4" /> {backLabel}
+      </Link>
+
       {/* Header */}
       <div className="flex items-center gap-4">
         <span className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-gradient-to-br from-brand-primary to-brand-secondary text-white font-bold text-lg ring-1 ring-white/40 shadow-md shadow-brand-primary/20">
@@ -121,6 +169,27 @@ export default async function ProfilePage() {
         </div>
         <PasswordForm />
       </section>
+
+      {/* Subjects taught — teachers only. Lets the teacher request a change
+          to their registered subject list; admin approves on /admin/approvals. */}
+      {!isAdmin && (
+        <section className="card p-5 sm:p-6 space-y-5">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-brand-secondary-light text-brand-secondary-dark">
+              <BookOpen className="w-4 h-4" />
+            </span>
+            <div>
+              <h2 className="text-sm font-semibold text-ink">Subjects I teach</h2>
+              <p className="text-xs text-ink-muted">Propose changes to your subject list — an admin approves before they take effect.</p>
+            </div>
+          </div>
+          <SubjectChangeRequestForm
+            availableSubjects={availableSubjects}
+            currentSubjectIds={currentSubjectIds}
+            pendingRequest={pendingRequest}
+          />
+        </section>
+      )}
 
       {/* Sessions */}
       <section className="card p-5 sm:p-6 space-y-5">

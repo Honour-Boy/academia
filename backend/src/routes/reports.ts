@@ -10,7 +10,10 @@ import { streamReportPDF, type ReportData, type SubjectScore } from '../template
 
 export const reportsRouter = Router()
 
-reportsRouter.use(requireAuth, requireRole(['ADMIN']))
+// Reports are admin-only at the router level. Individual routes that should
+// be reachable by a class teacher for their own class loosen the gate
+// inline + do a scoping check (see POST /bulk).
+reportsRouter.use(requireAuth, requireRole(['TEACHER', 'ADMIN']))
 
 const SCHOOL_NAME = process.env.SCHOOL_NAME ?? 'Your School'
 
@@ -176,6 +179,11 @@ function percentageToGrade(p: number): string {
  * Streams a single student's PDF report.
  */
 reportsRouter.get('/student/:id', async (req, res) => {
+  // Single-student PDF preview is admin-only (used by /admin/reports).
+  if (req.role !== 'ADMIN') {
+    res.status(403).send()
+    return
+  }
   const term = (req.query.term as string) ?? 'First Term'
   const year = (req.query.year as string) ?? '2025/2026'
 
@@ -218,9 +226,32 @@ reportsRouter.post('/bulk', async (req, res) => {
     .from('students')
     .select('id, class_id')
     .in('id', studentIds)
-  const classIds = Array.from(new Set((classRows ?? []).map((r: any) => r.class_id).filter(Boolean)))
+  const classIds = Array.from(new Set((classRows ?? []).map((r: any) => r.class_id).filter(Boolean))) as string[]
+
+  // Scoping for TEACHER role: must be class teacher of EVERY class the
+  // requested students belong to, for this term/year. Admin bypasses.
+  if (req.role !== 'ADMIN') {
+    if (classIds.length === 0) {
+      res.status(403).send()
+      return
+    }
+    const { data: ctaRows } = await adminClient
+      .from('class_teacher_assignments')
+      .select('class_id')
+      .eq('teacher_id', req.user!.id)
+      .eq('term', term)
+      .eq('academic_year', academicYear)
+      .in('class_id', classIds)
+    const teacherClassIds = new Set((ctaRows ?? []).map((r: any) => r.class_id))
+    const missing = classIds.filter((cid) => !teacherClassIds.has(cid))
+    if (missing.length > 0) {
+      res.status(403).send()
+      return
+    }
+  }
+
   for (const classId of classIds) {
-    await recomputeAndPersistClassRank(classId as string, term, academicYear)
+    await recomputeAndPersistClassRank(classId, term, academicYear)
   }
 
   res.setHeader('Content-Type', 'application/zip')
