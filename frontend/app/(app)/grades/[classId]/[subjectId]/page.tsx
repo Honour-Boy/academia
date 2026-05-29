@@ -3,6 +3,7 @@ import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import GradeEntryGrid from '@/components/grades/GradeEntryGrid'
 import { computeClassRows, classStats } from '@/lib/grade-utils'
+import { getGradingScale } from '@/lib/grading-scale-server'
 import { getSchoolSettings } from '@/lib/school-settings'
 import type { Grade, ScoreComponent, Student } from '@/types'
 import Link from 'next/link'
@@ -116,10 +117,12 @@ export default async function GradeEntryPage({ params, searchParams }: Props) {
 
   if (!classData || !subjectData) notFound()
 
+  const scale = await getGradingScale()
   const rows = computeClassRows(
     (students ?? []) as Student[],
     (grades ?? []) as Grade[],
     (components ?? []) as ScoreComponent[],
+    scale,
   )
   const stats = classStats(rows)
   const pct = stats.total > 0 ? Math.round((stats.graded / stats.total) * 100) : 0

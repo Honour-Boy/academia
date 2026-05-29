@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getGradeLetter, gradeLetterClasses } from '@/lib/grade-utils'
+import { getGradingScale } from '@/lib/grading-scale-server'
 import { getSchoolSettings } from '@/lib/school-settings'
 import Link from 'next/link'
 import { ArrowLeft, Printer } from 'lucide-react'
@@ -26,6 +27,7 @@ export default async function ReportPage({ params, searchParams }: Props) {
   const settings = await getSchoolSettings()
   const term = searchParams.term ?? settings.currentTerm
   const year = searchParams.year ?? settings.currentAcademicYear
+  const scale = await getGradingScale()
 
   // Fetch student
   const { data: student } = await supabase
@@ -147,7 +149,7 @@ export default async function ReportPage({ params, searchParams }: Props) {
             </thead>
             <tbody className="divide-y divide-surface-border">
               {rows.map((row) => {
-                const letter = getGradeLetter(row.percentage)
+                const letter = getGradeLetter(row.percentage, scale)
                 return (
                   <tr key={row.subjectName} className="hover:bg-surface-muted transition-colors">
                     <td className="px-5 py-3 font-medium text-ink">{row.subjectName}</td>
@@ -176,8 +178,8 @@ export default async function ReportPage({ params, searchParams }: Props) {
           </div>
           <div className="text-right">
             <p className="text-xs text-ink-muted mb-1">Overall Grade</p>
-            <span className={`grade-badge text-base w-12 h-9 ${gradeLetterClasses(getGradeLetter(overallAvg))}`}>
-              {getGradeLetter(overallAvg)}
+            <span className={`grade-badge text-base w-12 h-9 ${gradeLetterClasses(getGradeLetter(overallAvg, scale))}`}>
+              {getGradeLetter(overallAvg, scale)}
             </span>
           </div>
         </div>
