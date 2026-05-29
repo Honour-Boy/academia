@@ -1,12 +1,17 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { Settings, Info, History, ChevronRight } from 'lucide-react'
+import { Settings, Info, History, ChevronRight, Award, FileText, Smile } from 'lucide-react'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import type { Term } from '@/lib/grade-utils'
 import { listYearArchives } from '@/lib/year-archives'
+import { getGradingScale } from '@/lib/grading-scale-server'
+import { getAllBehaviourActivitiesAdmin } from '@/lib/behaviour-server'
 import SettingsForm from './SettingsForm'
 import GoToProfileCard from './GoToProfileCard'
+import GradingScaleEditor from './GradingScaleEditor'
+import ReportFieldsEditor from './ReportFieldsEditor'
+import BehaviourActivitiesEditor from './BehaviourActivitiesEditor'
 
 export const metadata: Metadata = { title: 'Admin · Settings' }
 
@@ -44,6 +49,16 @@ export default async function AdminSettingsPage() {
   const currentYear = settings?.current_academic_year ?? '2025/2026'
   const pastYears = archives.filter((a) => a.academic_year !== currentYear)
 
+  const [scale, { data: reportFields }, activities] = await Promise.all([
+    getGradingScale(),
+    admin
+      .from('report_field_settings')
+      .select('show_class_average, show_class_highest, show_position, show_previous_terms')
+      .eq('id', 1)
+      .maybeSingle(),
+    getAllBehaviourActivitiesAdmin(),
+  ])
+
   return (
     <div className="space-y-6 max-w-3xl">
       <div className="flex items-center gap-3">
@@ -75,6 +90,61 @@ export default async function AdminSettingsPage() {
           lastUpdatedAt={settings?.updated_at ?? null}
           lastUpdatedBy={lastUpdatedBy}
         />
+      </div>
+
+      {/* Grading scale */}
+      <div className="card p-5 sm:p-6 space-y-4">
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-brand-primary-light text-brand-primary-dark">
+            <Award className="w-4 h-4" />
+          </span>
+          <div className="flex-1 min-w-0">
+            <h3 className="text-base font-semibold text-ink">Grading scale</h3>
+            <p className="text-xs text-ink-muted mt-0.5">
+              Edit the letter grades used across dashboards, grade entry, and report sheets. Set the minimum percentage each letter earns; upper bounds are implicit.
+            </p>
+          </div>
+        </div>
+        <GradingScaleEditor initial={scale} />
+      </div>
+
+      {/* Report-field settings */}
+      <div className="card p-5 sm:p-6 space-y-4">
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-brand-accent/10 text-brand-accent">
+            <FileText className="w-4 h-4" />
+          </span>
+          <div className="flex-1 min-w-0">
+            <h3 className="text-base font-semibold text-ink">Report sheet fields</h3>
+            <p className="text-xs text-ink-muted mt-0.5">
+              Toggle which computed fields appear on student reports. Calculated at PDF generation, so changes apply to the next download.
+            </p>
+          </div>
+        </div>
+        <ReportFieldsEditor
+          initial={{
+            show_class_average: reportFields?.show_class_average ?? true,
+            show_class_highest: reportFields?.show_class_highest ?? true,
+            show_position:      reportFields?.show_position      ?? true,
+            show_previous_terms:reportFields?.show_previous_terms?? true,
+          }}
+        />
+      </div>
+
+      {/* Behaviour activities */}
+      <div className="card p-5 sm:p-6 space-y-4">
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-emerald-50 text-emerald-700">
+            <Smile className="w-4 h-4" />
+          </span>
+          <div className="flex-1 min-w-0">
+            <h3 className="text-base font-semibold text-ink">Behaviour activities</h3>
+            <p className="text-xs text-ink-muted mt-0.5">
+              Activities the class teacher scores per student per term (1–5). Reordering here changes the order on every class-teacher matrix and report sheet.
+            </p>
+          </div>
+        </div>
+        <BehaviourActivitiesEditor initial={activities} />
       </div>
 
       {/* Year archives — past years the school has data for */}

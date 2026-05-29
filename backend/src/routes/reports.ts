@@ -4,9 +4,10 @@ import archiver from 'archiver'
 import { z } from 'zod'
 import { requireAuth } from '../middleware/requireAuth'
 import { requireRole } from '../middleware/requireRole'
+import { heavyExportLimiter } from '../middleware/rateLimit'
 import { adminClient } from '../lib/supabase'
 import { defaultTemplate } from '../templates/parser'
-import { streamReportPDF, type ReportData, type SubjectScore } from '../templates/generator'
+import { streamReportPDF, type ReportData, type SubjectScore, type BehaviourActivityScore } from '../templates/generator'
 import { academicYearSchema, termSchema, uuidSchema } from '../lib/validators'
 
 export const reportsRouter = Router()
@@ -24,6 +25,65 @@ function slugify(name: string): string {
   return name.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '')
 }
 
+interface GradingScaleRow { letter: string; min_percentage: number; sort_order: number }
+
+const DEFAULT_FIELD_FLAGS = {
+  show_class_average: true,
+  show_class_highest: true,
+  show_position: true,
+  show_previous_terms: true,
+}
+
+const DEFAULT_GRADING_SCALE: GradingScaleRow[] = [
+  { letter: 'A1', min_percentage: 75, sort_order: 1 },
+  { letter: 'B2', min_percentage: 70, sort_order: 2 },
+  { letter: 'B3', min_percentage: 65, sort_order: 3 },
+  { letter: 'C4', min_percentage: 60, sort_order: 4 },
+  { letter: 'C5', min_percentage: 55, sort_order: 5 },
+  { letter: 'C6', min_percentage: 50, sort_order: 6 },
+  { letter: 'D7', min_percentage: 45, sort_order: 7 },
+  { letter: 'E8', min_percentage: 40, sort_order: 8 },
+  { letter: 'F9', min_percentage:  0, sort_order: 9 },
+]
+
+async function loadFieldFlags(): Promise<typeof DEFAULT_FIELD_FLAGS> {
+  const { data } = await adminClient
+    .from('report_field_settings')
+    .select('show_class_average, show_class_highest, show_position, show_previous_terms')
+    .eq('id', 1)
+    .maybeSingle()
+  return {
+    show_class_average:  data?.show_class_average  ?? DEFAULT_FIELD_FLAGS.show_class_average,
+    show_class_highest:  data?.show_class_highest  ?? DEFAULT_FIELD_FLAGS.show_class_highest,
+    show_position:       data?.show_position       ?? DEFAULT_FIELD_FLAGS.show_position,
+    show_previous_terms: data?.show_previous_terms ?? DEFAULT_FIELD_FLAGS.show_previous_terms,
+  }
+}
+
+async function loadGradingScale(): Promise<GradingScaleRow[]> {
+  const { data } = await adminClient
+    .from('grading_scale')
+    .select('letter, min_percentage, sort_order')
+    .order('sort_order', { ascending: true })
+  if (!data || data.length === 0) return DEFAULT_GRADING_SCALE
+  return data as GradingScaleRow[]
+}
+
+function gradeForPercentage(p: number, scale: GradingScaleRow[]): string {
+  for (const row of scale) {
+    if (p >= row.min_percentage) return row.letter
+  }
+  return scale[scale.length - 1]?.letter ?? 'F9'
+}
+
+/** Terms that come BEFORE `term` chronologically. */
+function priorTerms(term: string): string[] {
+  if (term === 'First Term') return []
+  if (term === 'Second Term') return ['First Term']
+  if (term === 'Third Term') return ['First Term', 'Second Term']
+  return []
+}
+
 /** Build the full ReportData for a single student + term/year. */
 async function buildReportData(
   studentId: string,
@@ -35,6 +95,9 @@ async function buildReportData(
     { data: studentSubjects },
     { data: remark },
     { data: components },
+    fieldFlags,
+    scale,
+    { data: activitiesData },
   ] = await Promise.all([
     adminClient
       .from('students')
@@ -56,6 +119,13 @@ async function buildReportData(
       .from('score_components')
       .select('*')
       .order('sort_order'),
+    loadFieldFlags(),
+    loadGradingScale(),
+    adminClient
+      .from('behaviour_activities')
+      .select('id, name, sort_order')
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true }),
   ])
 
   if (!student) return null
@@ -94,6 +164,69 @@ async function buildReportData(
   // Map components by id
   const compMap: Record<string, any> = {}
   for (const c of components ?? []) compMap[c.id] = c
+  const totalMaxScore = (components ?? []).reduce((s, c: any) => s + (c.max_score ?? 0), 0)
+
+  // ── Class-wide grades for THIS subject set (current term) — used for the
+  //    Class average + Class highest columns. Fetched once per report, then
+  //    bucketed per subject. Empty when both flags are off so we don't pay
+  //    the round-trip needlessly.
+  const wantClassAggregates =
+    (fieldFlags.show_class_average || fieldFlags.show_class_highest)
+    && classData
+    && subjectIds.length > 0
+  type ClassGradeRow = { student_id: string; subject_id: string; component_id: string; score: number | null }
+  let classGrades: ClassGradeRow[] = []
+  if (wantClassAggregates) {
+    const { data: classRoster } = await adminClient
+      .from('students')
+      .select('id')
+      .eq('class_id', classData!.id)
+      .eq('is_active', true)
+    const rosterIds = (classRoster ?? []).map((r: any) => r.id as string)
+    if (rosterIds.length > 0) {
+      const { data: cg } = await adminClient
+        .from('grades')
+        .select('student_id, subject_id, component_id, score')
+        .eq('class_id', classData!.id)
+        .eq('term', term)
+        .eq('academic_year', academicYear)
+        .in('subject_id', subjectIds)
+        .in('student_id', rosterIds)
+      classGrades = (cg ?? []) as ClassGradeRow[]
+    }
+  }
+
+  // ── Previous-term grades for THIS student — used for prev-term column. ──
+  const previousTermsList = fieldFlags.show_previous_terms ? priorTerms(term) : []
+  type PriorGradeRow = { subject_id: string; component_id: string; score: number | null; term: string }
+  let priorGrades: PriorGradeRow[] = []
+  if (previousTermsList.length > 0 && subjectIds.length > 0) {
+    const { data: pg } = await adminClient
+      .from('grades')
+      .select('subject_id, component_id, score, term')
+      .eq('student_id', studentId)
+      .eq('academic_year', academicYear)
+      .in('subject_id', subjectIds)
+      .in('term', previousTermsList)
+    priorGrades = (pg ?? []) as PriorGradeRow[]
+  }
+
+  // Per-subject helpers used below to compute class avg / highest.
+  function studentPercentageForSubject(
+    subjectId: string,
+    rows: { component_id: string; score: number | null }[],
+  ): number | null {
+    if (totalMaxScore <= 0) return null
+    let total = 0
+    let anyScore = false
+    for (const r of rows) {
+      if (r.score === null || r.score === undefined) continue
+      anyScore = true
+      total += r.score
+    }
+    if (!anyScore) return null
+    return (total / totalMaxScore) * 100
+  }
 
   // Build per-subject score rows
   const subjectScores: SubjectScore[] = []
@@ -118,6 +251,41 @@ async function buildReportData(
     }
 
     const percentage = Math.min(100, total)
+
+    // Class aggregates for this subject
+    let classAverage: number | null = null
+    let classHighest: number | null = null
+    if (wantClassAggregates) {
+      const perStudent = new Map<string, { component_id: string; score: number | null }[]>()
+      for (const row of classGrades) {
+        if (row.subject_id !== subj.id) continue
+        const list = perStudent.get(row.student_id) ?? []
+        list.push({ component_id: row.component_id, score: row.score })
+        perStudent.set(row.student_id, list)
+      }
+      const percentages: number[] = []
+      for (const rows of perStudent.values()) {
+        const p = studentPercentageForSubject(subj.id, rows)
+        if (p !== null) percentages.push(p)
+      }
+      if (percentages.length > 0) {
+        classAverage = percentages.reduce((a, b) => a + b, 0) / percentages.length
+        classHighest = percentages.reduce((a, b) => Math.max(a, b), -Infinity)
+      }
+    }
+
+    // Previous-term percentages for this subject
+    const previousTerms: { term: string; percentage: number | null }[] = []
+    for (const t of previousTermsList) {
+      const rows = priorGrades
+        .filter((g) => g.subject_id === subj.id && g.term === t)
+        .map((g) => ({ component_id: g.component_id, score: g.score }))
+      previousTerms.push({
+        term: t,
+        percentage: rows.length > 0 ? studentPercentageForSubject(subj.id, rows) : null,
+      })
+    }
+
     subjectScores.push({
       name: subj.name,
       ca1,
@@ -125,7 +293,10 @@ async function buildReportData(
       exam,
       total,
       percentage,
-      grade: percentageToGrade(percentage),
+      grade: gradeForPercentage(percentage, scale),
+      classAverage,
+      classHighest,
+      previousTerms,
     })
   }
 
@@ -137,6 +308,51 @@ async function buildReportData(
     subjectScores.length > 0
       ? Math.round(subjectScores.reduce((s, r) => s + r.percentage, 0) / subjectScores.length)
       : null
+
+  // ── Behaviour activity scores ─────────────────────────────────────────────
+  // For each active activity: pull the current-term score, plus prior-term
+  // scores when the report's term is Second/Third. Average is computed across
+  // every term that has a score; null when none recorded.
+  const activities = (activitiesData ?? []) as { id: string; name: string; sort_order: number }[]
+  const behaviourActivities: BehaviourActivityScore[] = []
+  if (activities.length > 0) {
+    const activityIds = activities.map((a) => a.id)
+    const termsToFetch = [term, ...priorTerms(term)]
+    const { data: bRows } = await adminClient
+      .from('student_behaviour_scores')
+      .select('activity_id, term, score')
+      .eq('student_id', studentId)
+      .eq('academic_year', academicYear)
+      .in('activity_id', activityIds)
+      .in('term', termsToFetch)
+
+    type BRow = { activity_id: string; term: string; score: number | null }
+    const byActivityTerm = new Map<string, number | null>()
+    for (const r of (bRows ?? []) as BRow[]) {
+      byActivityTerm.set(`${r.activity_id}::${r.term}`, r.score)
+    }
+
+    const priorTermList = priorTerms(term)
+    for (const a of activities) {
+      const current = byActivityTerm.get(`${a.id}::${term}`) ?? null
+      const previousTerms = priorTermList.map((t) => ({
+        term: t,
+        score: byActivityTerm.get(`${a.id}::${t}`) ?? null,
+      }))
+      const all: number[] = []
+      if (typeof current === 'number') all.push(current)
+      for (const p of previousTerms) if (typeof p.score === 'number') all.push(p.score)
+      const averageAcrossTerms = all.length > 0
+        ? all.reduce((s, v) => s + v, 0) / all.length
+        : null
+      behaviourActivities.push({
+        name: a.name,
+        current,
+        previousTerms,
+        averageAcrossTerms,
+      })
+    }
+  }
 
   return {
     studentName: student.full_name,
@@ -158,20 +374,13 @@ async function buildReportData(
     teacherRemark: remark?.teacher_remark ?? null,
     principalRemark: remark?.principal_remark ?? null,
     schoolName: SCHOOL_NAME,
+    showFields: fieldFlags,
+    behaviourActivities,
   }
 }
 
-function percentageToGrade(p: number): string {
-  if (p >= 75) return 'A1'
-  if (p >= 70) return 'B2'
-  if (p >= 65) return 'B3'
-  if (p >= 60) return 'C4'
-  if (p >= 55) return 'C5'
-  if (p >= 50) return 'C6'
-  if (p >= 45) return 'D7'
-  if (p >= 40) return 'E8'
-  return 'F9'
-}
+// `percentageToGrade` was inlined here for the bootstrapping period. The
+// scale-aware `gradeForPercentage(p, scale)` defined above replaces it.
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
@@ -185,7 +394,7 @@ const singleReportQuery = z.object({
   year: academicYearSchema.optional(),
 })
 
-reportsRouter.get('/student/:id', async (req, res) => {
+reportsRouter.get('/student/:id', heavyExportLimiter, async (req, res) => {
   // Single-student PDF preview is admin-only (used by /admin/reports).
   if (req.role !== 'ADMIN') {
     res.status(403).send()
@@ -228,7 +437,7 @@ const bulkBody = z.object({
   academicYear: academicYearSchema,
 })
 
-reportsRouter.post('/bulk', async (req, res) => {
+reportsRouter.post('/bulk', heavyExportLimiter, async (req, res) => {
   const parsed = bulkBody.safeParse(req.body)
   if (!parsed.success) {
     res.status(400).json({ error: 'Invalid body' })

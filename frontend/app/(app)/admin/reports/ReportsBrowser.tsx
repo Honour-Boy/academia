@@ -7,12 +7,15 @@ import SearchInput from '@/components/ui/SearchInput'
 import ExpandCollapseToggle from '@/components/ui/ExpandCollapseToggle'
 import DownloadReportButton from './DownloadReportButton'
 import DownloadClassZipButton from './DownloadClassZipButton'
+import PrincipalRemarkButton from './PrincipalRemarkButton'
 
 export interface ReportRow {
   id: string
   full_name: string
   studentNumber: string | null
   className: string
+  /** Currently-saved principal remark for the active term/year, if any. */
+  principalRemark: string | null
 }
 
 interface Props {
@@ -147,6 +150,13 @@ export default function ReportsBrowser({ rows, term, year }: Props) {
                         >
                           <Eye className="w-4 h-4" />
                         </Link>
+                        <PrincipalRemarkButton
+                          studentId={s.id}
+                          studentName={s.full_name}
+                          term={term}
+                          year={year}
+                          initialRemark={s.principalRemark}
+                        />
                         <DownloadReportButton
                           studentId={s.id}
                           studentName={s.full_name}

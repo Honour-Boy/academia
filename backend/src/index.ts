@@ -10,6 +10,7 @@ import { classesRouter } from './routes/classes'
 import { studentsRouter } from './routes/students'
 import { reportsRouter } from './routes/reports'
 import { adminRouter } from './routes/admin'
+import { defaultApiLimiter } from './middleware/rateLimit'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -24,6 +25,12 @@ const allowedOrigins = (process.env.FRONTEND_ORIGIN ?? 'http://localhost:3000')
 // ─── App ──────────────────────────────────────────────────────────────────────
 
 const app = express()
+
+// Render's edge sits in front of every request; without trusting it,
+// express-rate-limit + req.ip would all see the proxy IP and bucket every
+// caller together. Trust exactly one hop so a tampered X-Forwarded-For
+// can't spoof the client IP.
+app.set('trust proxy', 1)
 
 // Security headers
 app.use(helmet())
@@ -78,12 +85,16 @@ app.use(
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
+// /health is intentionally exempt from the global limiter so Render's
+// uptime checks don't get throttled. Every other surface goes through
+// defaultApiLimiter as a safety net — endpoint-specific limiters on grade
+// writes + heavy exports stack on top of this one.
 app.use('/health', healthRouter)
-app.use('/grades', gradesRouter)
-app.use('/classes', classesRouter)
-app.use('/students', studentsRouter)
-app.use('/reports', reportsRouter)
-app.use('/admin', adminRouter)
+app.use('/grades', defaultApiLimiter, gradesRouter)
+app.use('/classes', defaultApiLimiter, classesRouter)
+app.use('/students', defaultApiLimiter, studentsRouter)
+app.use('/reports', defaultApiLimiter, reportsRouter)
+app.use('/admin', defaultApiLimiter, adminRouter)
 
 // 404 fallthrough — no route leakage
 app.use((_req, res) => {

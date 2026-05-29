@@ -64,6 +64,14 @@ export default async function ProfilePage() {
     isCurrent: currentSessionId === s.id,
   }))
 
+  // Did this user ever set a Supabase password? `identities` reflects each
+  // sign-up/link path the user has taken — 'email' means a password-backed
+  // identity exists, anything else (e.g. 'google') alone means OAuth-only.
+  // We use this to decide whether to render the change-password form (with a
+  // current-password re-auth) or the set-password form (no re-auth, since
+  // there's nothing to re-auth against).
+  const hasPassword = (user.identities ?? []).some((i) => i.provider === 'email')
+
   const initials = profile.full_name
     .split(/\s+/)
     .filter(Boolean)
@@ -112,8 +120,15 @@ export default async function ProfilePage() {
   const backHref = isAdmin ? '/admin' : '/dashboard'
   const backLabel = isAdmin ? 'Back to admin console' : 'Back to dashboard'
 
+  // Admins now render inside AdminShell (its main supplies max-w-5xl + the
+  // page padding), so we drop the px/py here for that path. Teacher chrome
+  // (NavBar) doesn't supply horizontal padding, so the teacher path keeps it.
+  const containerCls = isAdmin
+    ? 'max-w-2xl mx-auto space-y-6 animate-fade-in-up'
+    : 'max-w-2xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 animate-fade-in-up'
+
   return (
-    <div className="max-w-2xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 animate-fade-in-up">
+    <div className={containerCls}>
       <Link
         href={backHref}
         className="inline-flex items-center gap-1 text-sm text-ink-muted hover:text-brand-primary transition-colors"
@@ -164,10 +179,14 @@ export default async function ProfilePage() {
           </span>
           <div>
             <h2 className="text-sm font-semibold text-ink">Password</h2>
-            <p className="text-xs text-ink-muted">Requires your current password to confirm the change.</p>
+            <p className="text-xs text-ink-muted">
+              {hasPassword
+                ? 'Requires your current password to confirm the change.'
+                : 'Set a password as a backup to Google sign-in.'}
+            </p>
           </div>
         </div>
-        <PasswordForm />
+        <PasswordForm hasPassword={hasPassword} />
       </section>
 
       {/* Subjects taught — teachers only. Lets the teacher request a change

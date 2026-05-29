@@ -10,6 +10,7 @@ import {
   assignClassTeacherAction,
   bulkAssignClassTeachersAction,
 } from '../students/actions'
+import ClassEditMenu from './ClassEditMenu'
 
 interface ClassRow {
   id: string
@@ -43,8 +44,10 @@ export default function ClassTeacherMatrix({
   const [savingRow, setSavingRow] = useState<string | null>(null)
   const [bulkPending, startBulk] = useTransition()
 
-  // Teacher IDs currently in use across drafts. Used to hide them from other
-  // class dropdowns — a teacher can only be class teacher for one class.
+  // Teacher IDs currently in use across drafts. Used to disable them in other
+  // class dropdowns (with a "(assigned to JSS 1A)" hint) so the admin can see
+  // *why* a teacher can't be picked, rather than silently filtering them out.
+  // A teacher can only hold one class-teacher slot per term.
   const usedByDraft = useMemo(() => {
     const map = new Map<string, string>() // teacherId → classId
     for (const [classId, teacherId] of Object.entries(drafts)) {
@@ -52,6 +55,13 @@ export default function ClassTeacherMatrix({
     }
     return map
   }, [drafts])
+
+  // Class lookup so we can render the "(assigned to <className>)" hint.
+  const classNameById = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const c of classes) m.set(c.id, c.name)
+    return m
+  }, [classes])
 
   function setDraft(classId: string, teacherId: string) {
     setDrafts((d) => ({ ...d, [classId]: teacherId }))
@@ -113,9 +123,11 @@ export default function ClassTeacherMatrix({
 
   return (
     <div className="space-y-4">
-      {/* Sticky bulk-save bar (only when there are unsaved changes) */}
+      {/* Sticky bulk-save bar (only when there are unsaved changes).
+          top-16 matches AdminShell's 64px topbar so the bar sits flush
+          underneath when scrolled. */}
       {dirtyClassIds.length > 0 && (
-        <div className="sticky top-[68px] z-20 -mx-3 sm:mx-0">
+        <div className="sticky top-16 z-20 -mx-3 sm:mx-0">
           <div className="card flex items-center gap-3 px-4 py-3 shadow-md ring-1 ring-brand-primary/30 bg-brand-primary-light/40">
             <Save className="w-4 h-4 text-brand-primary-dark flex-shrink-0" />
             <p className="text-sm text-ink flex-1 min-w-0 truncate">
@@ -151,16 +163,22 @@ export default function ClassTeacherMatrix({
           const isAssigned = !!baselineTeacherId
           const isSaving = savingRow === cls.id
 
-          // A teacher can only hold one class-teacher slot per term. Hide
-          // teachers picked elsewhere in the draft. Always keep the teacher
-          // selected for THIS row visible.
-          const options = teachers
-            .filter((t) => {
-              const usedByOther = usedByDraft.get(t.id)
-              if (!usedByOther) return true
-              return usedByOther === cls.id
-            })
-            .map((t) => ({ value: t.id, label: t.full_name }))
+          // A teacher can only hold one class-teacher slot per term. Keep
+          // every teacher visible — disable the ones already drafted on
+          // another class and show *which* class so the admin understands
+          // why they can't pick them again here.
+          const options = teachers.map((t) => {
+            const usedByOther = usedByDraft.get(t.id)
+            const conflict = usedByOther && usedByOther !== cls.id
+            return {
+              value: t.id,
+              label: t.full_name,
+              disabled: !!conflict,
+              secondary: conflict
+                ? `assigned to ${classNameById.get(usedByOther!) ?? usedByOther}`
+                : undefined,
+            }
+          })
 
           return (
             <div
@@ -180,6 +198,12 @@ export default function ClassTeacherMatrix({
                     <p className="text-xs text-ink-muted">{cls.level} · Arm {cls.arm}</p>
                   </div>
                 </div>
+                <ClassEditMenu
+                  classId={cls.id}
+                  level={cls.level}
+                  arm={cls.arm}
+                  className={cls.name}
+                />
                 {isDirty ? (
                   <span className="inline-flex items-center gap-1 text-[11px] bg-brand-secondary-light text-brand-secondary-dark font-medium px-2 py-1 rounded-full whitespace-nowrap">
                     unsaved
