@@ -30,7 +30,7 @@ export default function AssignSubjectTeacherForm({ teachers, classes, subjects, 
     const fd = new FormData(e.currentTarget)
     startTransition(async () => {
       const r = await assignSubjectTeacherAction(fd)
-      if (r?.error) {
+      if (r && 'error' in r) {
         setError(r.error)
       } else {
         toast.success('Subject teacher assigned')

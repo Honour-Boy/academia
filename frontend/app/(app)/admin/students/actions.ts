@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { duplicateNameError, findNameConflict } from '@/lib/name-uniqueness'
+import { requireWritableYear } from '@/lib/school-settings'
 
 // ── Enroll ────────────────────────────────────────────────────────────────────
 
@@ -202,6 +203,8 @@ export async function assignClassTeacherAction(formData: FormData) {
   const admin = createAdminClient()
   const { data: profile } = await admin.from('profiles').select('role').eq('id', user.id).single()
   if (profile?.role !== 'ADMIN') return { error: 'Unauthorised' }
+  const guard = await requireWritableYear()
+  if (guard) return guard
 
   const teacherId = formData.get('teacher_id') as string
   const classId = formData.get('class_id') as string
@@ -253,6 +256,10 @@ export async function bulkAssignClassTeachersAction(input: {
   const { data: profile } = await admin.from('profiles').select('role').eq('id', user.id).single()
   if (profile?.role !== 'ADMIN') {
     return { saved: 0, failed: input.rows.map((r) => ({ classId: r.classId, reason: 'Unauthorised' })) }
+  }
+  const guard = await requireWritableYear()
+  if (guard) {
+    return { saved: 0, failed: input.rows.map((r) => ({ classId: r.classId, reason: guard.error })) }
   }
 
   // Reject intra-batch duplicate teachers up front — a teacher can hold only

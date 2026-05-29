@@ -76,7 +76,7 @@ export default function ClassTeacherMatrix({
     fd.set('academic_year', academicYear)
     const r = await assignClassTeacherAction(fd)
     setSavingRow(null)
-    if (r?.error) {
+    if (r && 'error' in r) {
       toast.error(r.error)
       return
     }

@@ -3,11 +3,14 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { requireWritableYear } from '@/lib/school-settings'
 
 export async function upsertRemarkAction(formData: FormData) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
+  const guard = await requireWritableYear()
+  if (guard) return guard
 
   const studentId   = formData.get('student_id') as string
   const classId     = formData.get('class_id') as string

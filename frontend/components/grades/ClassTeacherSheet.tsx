@@ -65,7 +65,7 @@ function StudentRemarkRow({
     const fd = new FormData(e.currentTarget)
     startTransition(async () => {
       const result = await upsertRemarkAction(fd)
-      if (result?.error) {
+      if (result && 'error' in result) {
         setError(result.error)
       } else {
         setSaved(true)

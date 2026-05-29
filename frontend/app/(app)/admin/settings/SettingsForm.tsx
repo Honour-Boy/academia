@@ -13,6 +13,13 @@ import { copyTermAssignmentsAction, updateSchoolSettingsAction } from './actions
 interface Props {
   initialTerm: Term
   initialYear: string
+  /**
+   * Every academic_year that has rows in any year-scoped table. Drives the
+   * "backward to existing year" check: if the target year is in this list,
+   * we skip the wizard and just flip the active year (the year is browsed in
+   * view-only mode from then on, since the school is now "in" a past year).
+   */
+  knownYears: string[]
   lastUpdatedAt: string | null
   lastUpdatedBy: string | null
 }
@@ -24,7 +31,7 @@ function parseYearStart(value: string): number | null {
 }
 
 export default function SettingsForm({
-  initialTerm, initialYear, lastUpdatedAt, lastUpdatedBy,
+  initialTerm, initialYear, knownYears, lastUpdatedAt, lastUpdatedBy,
 }: Props) {
   const router = useRouter()
   const [term, setTerm] = useState<Term>(initialTerm)
@@ -35,6 +42,7 @@ export default function SettingsForm({
   // Modal state for the "save flow" decision tree.
   const [showTermModal, setShowTermModal] = useState(false)
   const [showYearModal, setShowYearModal] = useState(false)
+  const [showBackwardSwitchModal, setShowBackwardSwitchModal] = useState(false)
 
   const dirty = term !== initialTerm || year !== initialYear
 
@@ -49,23 +57,24 @@ export default function SettingsForm({
       return
     }
 
-    // Block backward year navigation — the wizard only supports promotion.
-    // Stepping back to an earlier year requires view-only history (coming in
-    // the follow-up PR). For now, reject with context.
     if (yearChanged) {
       const initialStart = parseYearStart(initialYear)
       const newStart = parseYearStart(year)
-      if (newStart != null && initialStart != null && newStart < initialStart) {
-        setError(
-          `Cannot roll back to ${year}. The promotion wizard only moves the school forward in time. ` +
-          `View-only access to past years (with the option to switch context to a year that already has records) is coming in a follow-up.`,
-        )
+      const isBackward = newStart != null && initialStart != null && newStart < initialStart
+
+      if (isBackward) {
+        // Backward switch is allowed ONLY if the target year exists in the
+        // archive registry. Otherwise reject — promotion only goes forward.
+        if (!knownYears.includes(year)) {
+          setError(
+            `Cannot switch to ${year}: no records exist for that year. The promotion wizard only moves forward; backward switches require the target year to already have data.`,
+          )
+          return
+        }
+        setShowBackwardSwitchModal(true)
         return
       }
-    }
 
-    // Year change is the bigger deal — always wins over a term-only modal.
-    if (yearChanged) {
       setShowYearModal(true)
       return
     }
@@ -73,6 +82,24 @@ export default function SettingsForm({
       setShowTermModal(true)
       return
     }
+  }
+
+  /** Backward switch — year already has records. Just flip the active year. */
+  function commitBackwardSwitch() {
+    startTransition(async () => {
+      const fd = new FormData()
+      fd.set('current_term', term)
+      fd.set('current_academic_year', year)
+      const result = await updateSchoolSettingsAction(fd)
+      if ('error' in result) {
+        setError(result.error)
+        setShowBackwardSwitchModal(false)
+        return
+      }
+      toast.success(`Switched active year to ${year}. Use the year picker on each admin page to browse — past-year data is view-only.`)
+      setShowBackwardSwitchModal(false)
+      router.refresh()
+    })
   }
 
   /** Term-only save path. Optionally copies staffing from the old term. */
@@ -225,6 +252,33 @@ export default function SettingsForm({
               {pending
                 ? <Loader2 className="w-4 h-4 animate-spin" />
                 : <><Copy className="w-4 h-4" /> Copy &amp; save</>}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Backward-switch modal: target year already has records → just flip */}
+      <Dialog open={showBackwardSwitchModal} onOpenChange={setShowBackwardSwitchModal}>
+        <DialogContent showClose={!pending}>
+          <DialogTitle>Switch active year to {year}?</DialogTitle>
+          <DialogDescription className="mt-2 space-y-2 block">
+            {year} already has records, so no promotion is needed &mdash; we just
+            switch the school&apos;s active year. Admin pages will show that
+            year&apos;s data in <span className="font-semibold">view-only</span>
+            mode (no edits, no new grades). Switch back to {initialYear} the
+            same way when you&apos;re done browsing.
+          </DialogDescription>
+          <DialogFooter>
+            <DialogClose className="btn-oauth" disabled={pending}>Cancel</DialogClose>
+            <button
+              type="button"
+              onClick={commitBackwardSwitch}
+              disabled={pending}
+              className="btn-brand inline-flex items-center gap-1.5"
+            >
+              {pending
+                ? <><Loader2 className="w-4 h-4 animate-spin" /> Switching…</>
+                : <>Switch to {year} <ArrowRight className="w-4 h-4" /></>}
             </button>
           </DialogFooter>
         </DialogContent>

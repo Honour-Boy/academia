@@ -15,6 +15,13 @@ import type { Term } from '@/lib/grade-utils'
 export interface SchoolSettings {
   currentTerm: Term
   currentAcademicYear: string
+  /**
+   * True when the school's active year is older than the most recent year in
+   * year_archives — i.e. the admin has switched back to a past year for
+   * browsing. In this mode every year-scoped mutation (grade entry,
+   * assignments, class teacher matrix, student remarks) must be blocked.
+   */
+  isViewOnlyYear: boolean
 }
 
 // Date-based fallback. Used only when the DB row is unreachable; never the
@@ -29,21 +36,39 @@ function fallbackFromDate(): SchoolSettings {
   let currentTerm: Term = 'Third Term'
   if (month >= 9 || month <= 12) currentTerm = 'First Term'
   else if (month >= 1 && month <= 4) currentTerm = 'Second Term'
-  return { currentTerm, currentAcademicYear }
+  return { currentTerm, currentAcademicYear, isViewOnlyYear: false }
 }
 
 export async function getSchoolSettings(): Promise<SchoolSettings> {
   const supabase = await createClient()
-  const { data, error } = await supabase
-    .from('school_settings')
-    .select('current_term, current_academic_year')
-    .eq('id', 1)
-    .maybeSingle()
+  const [{ data, error }, { data: archives }] = await Promise.all([
+    supabase
+      .from('school_settings')
+      .select('current_term, current_academic_year')
+      .eq('id', 1)
+      .maybeSingle(),
+    // year_archives is RLS-readable by every authenticated user. Used to
+    // decide whether the active year is "the latest" (writable) or a past
+    // year being browsed (view-only).
+    supabase
+      .from('year_archives')
+      .select('academic_year'),
+  ])
 
   if (error || !data) return fallbackFromDate()
+
+  const knownYears = (archives ?? [])
+    .map((a: { academic_year: string }) => a.academic_year)
+    .filter(Boolean)
+  // Lexical sort works because YYYY/YYYY sorts correctly as a string.
+  const latestKnown = knownYears.length > 0
+    ? knownYears.reduce((a, b) => (a > b ? a : b))
+    : data.current_academic_year
+
   return {
     currentTerm: data.current_term as Term,
     currentAcademicYear: data.current_academic_year,
+    isViewOnlyYear: data.current_academic_year < latestKnown,
   }
 }
 
@@ -55,4 +80,19 @@ export async function getCurrentTerm(): Promise<Term> {
 
 export async function getCurrentAcademicYear(): Promise<string> {
   return (await getSchoolSettings()).currentAcademicYear
+}
+
+/**
+ * Server-action guard: returns an `{ error }` shape that any year-scoped
+ * mutation can short-circuit with. Use at the top of actions that write to
+ * grades, teacher_assignments, class_teacher_assignments, or student_remarks.
+ */
+export async function requireWritableYear(): Promise<{ error: string } | null> {
+  const { isViewOnlyYear, currentAcademicYear } = await getSchoolSettings()
+  if (isViewOnlyYear) {
+    return {
+      error: `The school is currently browsing past year ${currentAcademicYear} in view-only mode. Switch back to the latest year via /admin/settings to make changes.`,
+    }
+  }
+  return null
 }
