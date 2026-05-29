@@ -33,6 +33,18 @@ export interface ReportFieldFlags {
   show_previous_terms: boolean
 }
 
+export interface BehaviourActivityScore {
+  /** Activity name as configured in `behaviour_activities`. */
+  name: string
+  /** Score for the report's current term, 1–5 or null. */
+  current: number | null
+  /** Prior-term scores, oldest first. Empty on First-term reports. */
+  previousTerms: { term: string; score: number | null }[]
+  /** Average across current + prior terms. Null when no data. Only shown on
+   *  Second-term + Third-term reports. */
+  averageAcrossTerms: number | null
+}
+
 export interface ReportData {
   studentName: string
   studentNumber: string | null
@@ -53,6 +65,8 @@ export interface ReportData {
   schoolName: string
   /** Which extension columns to render — admin-controlled. Defaults to all-on. */
   showFields: ReportFieldFlags
+  /** Behaviour-activity matrix. Empty when the school has no activities. */
+  behaviourActivities: BehaviourActivityScore[]
 }
 
 // ── Colours ───────────────────────────────────────────────────────────────────
@@ -238,6 +252,90 @@ export function streamReportPDF(
     }
   }
 
+  // ── Behaviour activities ──────────────────────────────────────────────────
+  if (data.behaviourActivities.length > 0) {
+    y += 12
+    // Page-break guard before opening a new section.
+    if (y > doc.page.height - 180) {
+      doc.addPage()
+      y = 40
+    }
+    doc.fontSize(11).font('Helvetica-Bold').fillColor(C.ink).text('BEHAVIOUR', 40, y)
+    y += 18
+    doc.moveTo(40, y).lineTo(40 + pageW, y).strokeColor(C.brand).lineWidth(1.5).stroke()
+    y += 6
+
+    // Collect prior-term columns across the matrix (so we don't add a column
+    // for a term with no data anywhere).
+    const priorTermsPresent = collectBehaviourPriorTerms(data)
+    const showAverage = priorTermsPresent.length > 0 // i.e. ≥ Second Term
+    type BCol = { header: string; render: (a: BehaviourActivityScore) => string; w: number; align: 'left' | 'center' }
+    const bcols: BCol[] = [
+      { header: 'Activity', render: (a) => a.name, w: 0, align: 'left' },
+      { header: shortTerm(data.term), render: (a) => fmtScore(a.current), w: 50, align: 'center' },
+    ]
+    for (const t of priorTermsPresent) {
+      bcols.push({
+        header: shortTerm(t),
+        render: (a) => fmtScore(a.previousTerms.find((p) => p.term === t)?.score ?? null),
+        w: 50,
+        align: 'center',
+      })
+    }
+    if (showAverage) {
+      bcols.push({
+        header: 'Avg',
+        render: (a) => a.averageAcrossTerms !== null ? a.averageAcrossTerms.toFixed(1) : '—',
+        w: 50,
+        align: 'center',
+      })
+    }
+    const bFixed = bcols.slice(1).reduce((sum, c) => sum + c.w, 0)
+    bcols[0].w = Math.max(180, pageW - bFixed)
+
+    // Header
+    doc.rect(40, y, pageW, 18).fillColor(C.headerBg).fill()
+    let bx = 40
+    for (const c of bcols) {
+      doc
+        .fontSize(8)
+        .font('Helvetica-Bold')
+        .fillColor(C.muted)
+        .text(c.header, bx + 4, y + 5, { width: c.w - 4, align: c.align })
+      bx += c.w
+    }
+    y += 18
+
+    let alt = false
+    for (const act of data.behaviourActivities) {
+      if (alt) doc.rect(40, y, pageW, 14).fillColor('#F8FAFC').fill()
+      alt = !alt
+      bx = 40
+      for (let i = 0; i < bcols.length; i++) {
+        const c = bcols[i]
+        doc
+          .fontSize(8)
+          .font(i === 0 ? 'Helvetica' : 'Helvetica-Bold')
+          .fillColor(C.ink)
+          .text(c.render(act), bx + 4, y + 3, { width: c.w - 4, align: c.align })
+        bx += c.w
+      }
+      y += 14
+      if (y > doc.page.height - 80) {
+        doc.addPage()
+        y = 40
+      }
+    }
+    // Tiny legend so the meaning of 1–5 is on the page.
+    y += 4
+    doc
+      .fontSize(7)
+      .font('Helvetica')
+      .fillColor(C.subtle)
+      .text('Key: 5 = Very Good · 4 = Good · 3 = Fair · 2 = Weak · 1 = Poor', 40, y, { width: pageW })
+    y += 12
+  }
+
   // ── Attendance ─────────────────────────────────────────────────────────────
   const hasAttendance =
     data.timesPresent !== null || data.timesAbsent !== null || data.timesLate !== null
@@ -328,6 +426,25 @@ function collectPreviousTermColumns(data: ReportData): string[] {
     }
   }
   return order.filter((t) => present.has(t))
+}
+
+/**
+ * Same idea for the behaviour matrix — only render prev-term columns where
+ * at least one activity has a score in that term.
+ */
+function collectBehaviourPriorTerms(data: ReportData): string[] {
+  const order = ['First Term', 'Second Term', 'Third Term']
+  const present = new Set<string>()
+  for (const act of data.behaviourActivities) {
+    for (const p of act.previousTerms) {
+      if (p.score !== null) present.add(p.term)
+    }
+  }
+  return order.filter((t) => present.has(t))
+}
+
+function fmtScore(score: number | null): string {
+  return score === null ? '—' : String(score)
 }
 
 /** Compact label for prev-term columns. "First Term" → "1st". */

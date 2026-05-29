@@ -6,7 +6,7 @@ import { requireAuth } from '../middleware/requireAuth'
 import { requireRole } from '../middleware/requireRole'
 import { adminClient } from '../lib/supabase'
 import { defaultTemplate } from '../templates/parser'
-import { streamReportPDF, type ReportData, type SubjectScore } from '../templates/generator'
+import { streamReportPDF, type ReportData, type SubjectScore, type BehaviourActivityScore } from '../templates/generator'
 import { academicYearSchema, termSchema, uuidSchema } from '../lib/validators'
 
 export const reportsRouter = Router()
@@ -96,6 +96,7 @@ async function buildReportData(
     { data: components },
     fieldFlags,
     scale,
+    { data: activitiesData },
   ] = await Promise.all([
     adminClient
       .from('students')
@@ -119,6 +120,11 @@ async function buildReportData(
       .order('sort_order'),
     loadFieldFlags(),
     loadGradingScale(),
+    adminClient
+      .from('behaviour_activities')
+      .select('id, name, sort_order')
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true }),
   ])
 
   if (!student) return null
@@ -302,6 +308,51 @@ async function buildReportData(
       ? Math.round(subjectScores.reduce((s, r) => s + r.percentage, 0) / subjectScores.length)
       : null
 
+  // ── Behaviour activity scores ─────────────────────────────────────────────
+  // For each active activity: pull the current-term score, plus prior-term
+  // scores when the report's term is Second/Third. Average is computed across
+  // every term that has a score; null when none recorded.
+  const activities = (activitiesData ?? []) as { id: string; name: string; sort_order: number }[]
+  const behaviourActivities: BehaviourActivityScore[] = []
+  if (activities.length > 0) {
+    const activityIds = activities.map((a) => a.id)
+    const termsToFetch = [term, ...priorTerms(term)]
+    const { data: bRows } = await adminClient
+      .from('student_behaviour_scores')
+      .select('activity_id, term, score')
+      .eq('student_id', studentId)
+      .eq('academic_year', academicYear)
+      .in('activity_id', activityIds)
+      .in('term', termsToFetch)
+
+    type BRow = { activity_id: string; term: string; score: number | null }
+    const byActivityTerm = new Map<string, number | null>()
+    for (const r of (bRows ?? []) as BRow[]) {
+      byActivityTerm.set(`${r.activity_id}::${r.term}`, r.score)
+    }
+
+    const priorTermList = priorTerms(term)
+    for (const a of activities) {
+      const current = byActivityTerm.get(`${a.id}::${term}`) ?? null
+      const previousTerms = priorTermList.map((t) => ({
+        term: t,
+        score: byActivityTerm.get(`${a.id}::${t}`) ?? null,
+      }))
+      const all: number[] = []
+      if (typeof current === 'number') all.push(current)
+      for (const p of previousTerms) if (typeof p.score === 'number') all.push(p.score)
+      const averageAcrossTerms = all.length > 0
+        ? all.reduce((s, v) => s + v, 0) / all.length
+        : null
+      behaviourActivities.push({
+        name: a.name,
+        current,
+        previousTerms,
+        averageAcrossTerms,
+      })
+    }
+  }
+
   return {
     studentName: student.full_name,
     studentNumber: student.student_number ?? null,
@@ -323,6 +374,7 @@ async function buildReportData(
     principalRemark: remark?.principal_remark ?? null,
     schoolName: SCHOOL_NAME,
     showFields: fieldFlags,
+    behaviourActivities,
   }
 }
 
