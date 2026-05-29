@@ -2,6 +2,8 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import AppChrome from '@/components/app/AppChrome'
 import AccountStatusScreen from '@/components/ui/AccountStatusScreen'
+import ViewOnlyYearBanner from '@/components/ui/ViewOnlyYearBanner'
+import { getSchoolSettings } from '@/lib/school-settings'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -45,9 +47,29 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const schoolName = process.env.NEXT_PUBLIC_SCHOOL_NAME ?? 'My Dream College'
 
+  // View-only banner — appears app-wide whenever the school's active year is
+  // a past year (admin switched back to browse). Picks up the latest known
+  // year from year_archives via getSchoolSettings.
+  const settings = await getSchoolSettings()
+  let latestYear: string | null = null
+  if (settings.isViewOnlyYear) {
+    const { data: archives } = await supabase
+      .from('year_archives')
+      .select('academic_year')
+    const years = (archives ?? [])
+      .map((a: { academic_year: string }) => a.academic_year)
+      .filter(Boolean)
+    latestYear = years.length > 0 ? years.reduce((a, b) => (a > b ? a : b)) : null
+  }
+
   return (
-    <AppChrome profile={profile} schoolName={schoolName}>
-      {children}
-    </AppChrome>
+    <>
+      {settings.isViewOnlyYear && latestYear && (
+        <ViewOnlyYearBanner currentYear={settings.currentAcademicYear} latestYear={latestYear} />
+      )}
+      <AppChrome profile={profile} schoolName={schoolName}>
+        {children}
+      </AppChrome>
+    </>
   )
 }

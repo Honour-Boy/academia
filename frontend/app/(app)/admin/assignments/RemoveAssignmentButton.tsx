@@ -11,7 +11,7 @@ export default function RemoveAssignmentButton({ assignmentId }: { assignmentId:
   function handleClick() {
     startTransition(async () => {
       const r = await removeAssignmentAction(assignmentId)
-      if (r?.error) toast.error(r.error)
+      if (r && 'error' in r) toast.error(r.error)
       else toast.success('Assignment removed')
     })
   }
