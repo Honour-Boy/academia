@@ -3,8 +3,11 @@ import { z } from 'zod'
 import { requireAuth } from '../middleware/requireAuth'
 import { requireRole } from '../middleware/requireRole'
 import { adminClient } from '../lib/supabase'
+import { uuidSchema } from '../lib/validators'
 
 export const classesRouter = Router()
+
+const idParam = z.object({ id: uuidSchema })
 
 classesRouter.use(requireAuth, requireRole(['TEACHER', 'ADMIN']))
 
@@ -43,6 +46,7 @@ classesRouter.get('/', async (req, res) => {
   const { data, error } = await query
 
   if (error) {
+    console.error('[classes GET] error:', error)
     res.status(500).json({ error: 'Failed to fetch classes' })
     return
   }
@@ -68,6 +72,7 @@ classesRouter.post(
       .single()
 
     if (error) {
+      console.error('[classes POST] error:', error)
       res.status(500).json({ error: 'Failed to create class' })
       return
     }
@@ -81,12 +86,18 @@ classesRouter.delete(
   '/:id',
   requireRole(['ADMIN']),
   async (req, res) => {
+    const paramParsed = idParam.safeParse(req.params)
+    if (!paramParsed.success) {
+      res.status(400).json({ error: 'Invalid id' })
+      return
+    }
     const { error } = await adminClient
       .from('classes')
       .delete()
-      .eq('id', req.params.id)
+      .eq('id', paramParsed.data.id)
 
     if (error) {
+      console.error('[classes DELETE] error:', error)
       res.status(500).json({ error: 'Failed to delete class' })
       return
     }

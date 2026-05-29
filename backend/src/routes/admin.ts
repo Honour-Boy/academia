@@ -4,6 +4,9 @@ import { z } from 'zod'
 import { requireAuth } from '../middleware/requireAuth'
 import { requireRole } from '../middleware/requireRole'
 import { adminClient } from '../lib/supabase'
+import { academicYearSchema, termSchema, uuidSchema } from '../lib/validators'
+
+const idParam = z.object({ id: uuidSchema })
 
 export const adminRouter = Router()
 
@@ -19,11 +22,11 @@ const createTeacherBody = z.object({
 })
 
 const assignTeacherBody = z.object({
-  teacher_id: z.string().uuid(),
-  class_id: z.string().uuid(),
-  subject_id: z.string().uuid(),
-  term: z.string().min(1),
-  academic_year: z.string().min(1),
+  teacher_id: uuidSchema,
+  class_id: uuidSchema,
+  subject_id: uuidSchema,
+  term: termSchema,
+  academic_year: academicYearSchema,
 })
 
 // ─── Teachers ─────────────────────────────────────────────────────────────────
@@ -71,14 +74,65 @@ adminRouter.post('/teachers', async (req, res) => {
   res.status(201).json({ id: authData.user.id, email, full_name })
 })
 
-/** PATCH /admin/teachers/:id/deactivate */
+/**
+ * PATCH /admin/teachers/:id/deactivate
+ *
+ * Safety guards mirror the frontend `toggleTeacherStatusAction` so a direct
+ * HTTP request can't bypass them:
+ *   - admin can never deactivate ANOTHER admin
+ *   - admin can deactivate themselves, BUT not when they're the only active
+ *     admin (would leave the school with no path back to admin access)
+ */
 adminRouter.patch('/teachers/:id/deactivate', async (req, res) => {
+  const paramParsed = idParam.safeParse(req.params)
+  if (!paramParsed.success) {
+    res.status(400).json({ error: 'Invalid id' })
+    return
+  }
+  const targetId = paramParsed.data.id
+  const callerId = req.user!.id
+
+  const { data: target, error: lookupErr } = await adminClient
+    .from('profiles')
+    .select('id, role, is_active')
+    .eq('id', targetId)
+    .maybeSingle()
+
+  if (lookupErr) {
+    console.error('[admin teachers deactivate] lookup error:', lookupErr)
+    res.status(500).json({ error: 'Failed to deactivate teacher' })
+    return
+  }
+  if (!target) {
+    res.status(404).send()
+    return
+  }
+
+  if (target.role === 'ADMIN') {
+    if (target.id !== callerId) {
+      res.status(403).json({ error: "Admins can't deactivate another admin's account." })
+      return
+    }
+    const { count: activeAdmins } = await adminClient
+      .from('profiles')
+      .select('id', { count: 'exact', head: true })
+      .eq('role', 'ADMIN')
+      .eq('is_active', true)
+    if ((activeAdmins ?? 0) <= 1) {
+      res.status(409).json({
+        error: 'You are the only active administrator. Promote another admin first.',
+      })
+      return
+    }
+  }
+
   const { error } = await adminClient
     .from('profiles')
     .update({ is_active: false })
-    .eq('id', req.params.id)
+    .eq('id', targetId)
 
   if (error) {
+    console.error('[admin teachers deactivate] update error:', error)
     res.status(500).json({ error: 'Failed to deactivate teacher' })
     return
   }
@@ -88,12 +142,18 @@ adminRouter.patch('/teachers/:id/deactivate', async (req, res) => {
 
 /** PATCH /admin/teachers/:id/reactivate */
 adminRouter.patch('/teachers/:id/reactivate', async (req, res) => {
+  const paramParsed = idParam.safeParse(req.params)
+  if (!paramParsed.success) {
+    res.status(400).json({ error: 'Invalid id' })
+    return
+  }
   const { error } = await adminClient
     .from('profiles')
     .update({ is_active: true })
-    .eq('id', req.params.id)
+    .eq('id', paramParsed.data.id)
 
   if (error) {
+    console.error('[admin teachers reactivate] error:', error)
     res.status(500).json({ error: 'Failed to reactivate teacher' })
     return
   }
@@ -148,12 +208,18 @@ adminRouter.post('/assignments', async (req, res) => {
 
 /** DELETE /admin/assignments/:id */
 adminRouter.delete('/assignments/:id', async (req, res) => {
+  const paramParsed = idParam.safeParse(req.params)
+  if (!paramParsed.success) {
+    res.status(400).json({ error: 'Invalid id' })
+    return
+  }
   const { error } = await adminClient
     .from('teacher_assignments')
     .delete()
-    .eq('id', req.params.id)
+    .eq('id', paramParsed.data.id)
 
   if (error) {
+    console.error('[admin assignments DELETE] error:', error)
     res.status(500).json({ error: 'Failed to delete assignment' })
     return
   }
@@ -168,14 +234,19 @@ adminRouter.delete('/assignments/:id', async (req, res) => {
  * Streams all grades for the given term/year as CSV. Optional classId filter.
  * ADMIN-only — gated by the router-level requireRole above.
  */
+const gradesExportQuery = z.object({
+  term: termSchema,
+  academicYear: academicYearSchema,
+  classId: uuidSchema.optional(),
+})
+
 adminRouter.get('/grades-export', async (req, res) => {
-  const term = (req.query.term as string) || ''
-  const academicYear = (req.query.academicYear as string) || ''
-  const classId = (req.query.classId as string) || ''
-  if (!term || !academicYear) {
-    res.status(400).json({ error: 'term and academicYear required' })
+  const parsedQuery = gradesExportQuery.safeParse(req.query)
+  if (!parsedQuery.success) {
+    res.status(400).json({ error: 'Invalid query parameters' })
     return
   }
+  const { term, academicYear, classId } = parsedQuery.data
 
   // Pull grades joined with student / class / subject / component metadata.
   let query = adminClient
@@ -193,6 +264,7 @@ adminRouter.get('/grades-export', async (req, res) => {
 
   const { data, error } = await query
   if (error) {
+    console.error('[admin grades-export] error:', error)
     res.status(500).json({ error: 'Failed to fetch grades' })
     return
   }
@@ -284,21 +356,29 @@ function slugify(s: string): string {
 
 // ─── Audit log ────────────────────────────────────────────────────────────────
 
+const auditQuery = z.object({ gradeId: uuidSchema.optional() })
+
 /** GET /admin/audit?gradeId= — admin read-only view of audit entries */
 adminRouter.get('/audit', async (req, res) => {
+  const parsedQuery = auditQuery.safeParse(req.query)
+  if (!parsedQuery.success) {
+    res.status(400).json({ error: 'Invalid query parameters' })
+    return
+  }
   let query = adminClient
     .from('grade_audit_log')
     .select('*')
     .order('changed_at', { ascending: false })
     .limit(500)
 
-  if (req.query.gradeId) {
-    query = query.eq('grade_id', req.query.gradeId as string)
+  if (parsedQuery.data.gradeId) {
+    query = query.eq('grade_id', parsedQuery.data.gradeId)
   }
 
   const { data, error } = await query
 
   if (error) {
+    console.error('[admin audit] error:', error)
     res.status(500).json({ error: 'Failed to fetch audit log' })
     return
   }

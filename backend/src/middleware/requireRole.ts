@@ -25,11 +25,21 @@ export function requireRole(allowed: AllowedRole[]) {
 
     const { data, error } = await adminClient
       .from('profiles')
-      .select('role, is_active')
+      .select('role, is_active, status')
       .eq('id', req.user.id)
       .single()
 
-    if (error || !data || !data.is_active) {
+    // Belt-and-braces: pending / denied users have is_active=false per the
+    // handle_new_user trigger, so the is_active check below would already
+    // reject them. We also explicitly require status='approved' so a row
+    // whose is_active was toggled directly in the DB (without going through
+    // the approval flow) can't pivot to API access.
+    if (
+      error
+      || !data
+      || !data.is_active
+      || data.status !== 'approved'
+    ) {
       res.status(403).send()
       return
     }
