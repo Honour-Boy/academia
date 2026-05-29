@@ -10,6 +10,7 @@ import {
   assignClassTeacherAction,
   bulkAssignClassTeachersAction,
 } from '../students/actions'
+import ClassEditMenu from './ClassEditMenu'
 
 interface ClassRow {
   id: string
@@ -180,6 +181,12 @@ export default function ClassTeacherMatrix({
                     <p className="text-xs text-ink-muted">{cls.level} · Arm {cls.arm}</p>
                   </div>
                 </div>
+                <ClassEditMenu
+                  classId={cls.id}
+                  level={cls.level}
+                  arm={cls.arm}
+                  className={cls.name}
+                />
                 {isDirty ? (
                   <span className="inline-flex items-center gap-1 text-[11px] bg-brand-secondary-light text-brand-secondary-dark font-medium px-2 py-1 rounded-full whitespace-nowrap">
                     unsaved

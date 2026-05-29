@@ -1,44 +1,39 @@
 import type { GradeLetter, ScoreComponent, Student, Grade, StudentGradeRow } from '@/types'
+import {
+  DEFAULT_GRADING_SCALE,
+  gradeLetterFromScale,
+  letterClasses,
+  type GradingScaleRow,
+} from '@/lib/grading-scale'
 
-// ─── Grade Letter Calculation (Nigerian WAEC system) ─────────────────────────
+// ─── Grade Letter Calculation ────────────────────────────────────────────────
+// Scale is admin-configurable via the `grading_scale` table; callers should
+// pass the scale they've already fetched. The legacy DEFAULT_GRADING_SCALE
+// fallback below keeps places that haven't been threaded through (yet) from
+// crashing — they'll just use the WAEC defaults.
 
-export function getGradeLetter(percentage: number): GradeLetter {
-  if (percentage >= 75) return 'A1'
-  if (percentage >= 70) return 'B2'
-  if (percentage >= 65) return 'B3'
-  if (percentage >= 60) return 'C4'
-  if (percentage >= 55) return 'C5'
-  if (percentage >= 50) return 'C6'
-  if (percentage >= 45) return 'D7'
-  if (percentage >= 40) return 'E8'
-  return 'F9'
+/** Backwards-compatible wrapper. Pass a scale for admin-configured grades. */
+export function getGradeLetter(percentage: number, scale: GradingScaleRow[] = DEFAULT_GRADING_SCALE): GradeLetter {
+  return gradeLetterFromScale(percentage, scale) as GradeLetter
 }
 
-export function isPassingGrade(letter: GradeLetter): boolean {
-  return !['F9'].includes(letter)
+export function isPassingGrade(letter: string, scale: GradingScaleRow[] = DEFAULT_GRADING_SCALE): boolean {
+  // Lowest letter in the scale (largest sort_order) is treated as failing.
+  const sorted = [...scale].sort((a, b) => a.sort_order - b.sort_order)
+  const lowest = sorted[sorted.length - 1]?.letter
+  return letter !== lowest
 }
 
-export function gradeLetterClasses(letter: GradeLetter): string {
-  const map: Record<GradeLetter, string> = {
-    A1: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300',
-    B2: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300',
-    B3: 'bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-950 dark:text-blue-300',
-    C4: 'bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950 dark:text-sky-300',
-    C5: 'bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-950 dark:text-yellow-300',
-    C6: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300',
-    D7: 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950 dark:text-orange-300',
-    E8: 'bg-orange-50 text-orange-800 border-orange-300 dark:bg-orange-950 dark:text-orange-300',
-    F9: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-300',
-  }
-  return map[letter]
-}
+/** Re-export so legacy imports of `gradeLetterClasses` keep working. */
+export const gradeLetterClasses = letterClasses
 
 // ─── Score Computation ────────────────────────────────────────────────────────
 
 export function computeStudentRow(
   student: Student,
   grades: Grade[],
-  components: ScoreComponent[]
+  components: ScoreComponent[],
+  scale: GradingScaleRow[] = DEFAULT_GRADING_SCALE,
 ): StudentGradeRow {
   const scores: Record<string, number | null> = {}
 
@@ -67,7 +62,7 @@ export function computeStudentRow(
     scores,
     total,
     percentage: Math.round(percentage * 10) / 10,
-    gradeLetter: getGradeLetter(percentage),
+    gradeLetter: getGradeLetter(percentage, scale),
     isComplete,
   }
 }
@@ -75,12 +70,13 @@ export function computeStudentRow(
 export function computeClassRows(
   students: Student[],
   grades: Grade[],
-  components: ScoreComponent[]
+  components: ScoreComponent[],
+  scale: GradingScaleRow[] = DEFAULT_GRADING_SCALE,
 ): StudentGradeRow[] {
   return students
     .filter((s) => s.is_active)
     .sort((a, b) => a.full_name.localeCompare(b.full_name))
-    .map((s) => computeStudentRow(s, grades, components))
+    .map((s) => computeStudentRow(s, grades, components, scale))
 }
 
 // ─── Class Statistics ─────────────────────────────────────────────────────────

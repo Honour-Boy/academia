@@ -16,7 +16,6 @@ import {
 import { createClassAction } from './actions'
 
 const LEVELS = ['JSS 1', 'JSS 2', 'JSS 3', 'SS 1', 'SS 2', 'SS 3'] as const
-const ARMS = ['A', 'B', 'C', 'D', 'E', 'F'] as const
 
 export default function CreateClassDialog() {
   const [open, setOpen] = useState(false)
@@ -25,7 +24,10 @@ export default function CreateClassDialog() {
   const [arm, setArm] = useState<string>('')
   const [pending, startTransition] = useTransition()
 
-  const preview = level && arm ? `${level}${arm}` : null
+  const trimmedArm = arm.trim()
+  const preview = level && trimmedArm
+    ? (trimmedArm.length === 1 ? `${level}${trimmedArm}` : `${level} ${trimmedArm}`)
+    : null
 
   function reset() {
     setError(null)
@@ -96,20 +98,22 @@ export default function CreateClassDialog() {
               <label htmlFor="arm" className="block text-sm font-medium text-ink mb-1.5">
                 Arm
               </label>
-              <select
+              <input
                 id="arm"
                 name="arm"
+                type="text"
                 required
                 disabled={pending}
                 value={arm}
                 onChange={(e) => setArm(e.target.value)}
+                placeholder="A, Topaz, Emerald…"
+                maxLength={20}
                 className="input-brand"
-              >
-                <option value="">—</option>
-                {ARMS.map((a) => (
-                  <option key={a} value={a}>{a}</option>
-                ))}
-              </select>
+                autoComplete="off"
+              />
+              <p className="text-[11px] text-ink-subtle mt-1">
+                Single letter (&ldquo;A&rdquo;) or a name (&ldquo;Topaz&rdquo;). 1–20 chars.
+              </p>
             </div>
           </div>
 
@@ -134,7 +138,7 @@ export default function CreateClassDialog() {
             <DialogClose asChild>
               <button type="button" className="btn-secondary" disabled={pending}>Cancel</button>
             </DialogClose>
-            <button type="submit" className="btn-brand" disabled={pending || !level || !arm}>
+            <button type="submit" className="btn-brand" disabled={pending || !level || !trimmedArm}>
               {pending ? (
                 <><Loader2 className="w-4 h-4 animate-spin" /> Creating…</>
               ) : (
