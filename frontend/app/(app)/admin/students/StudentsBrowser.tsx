@@ -4,10 +4,10 @@ import { useMemo, useState, useTransition } from 'react'
 import Link from 'next/link'
 import {
   Pencil, UserCheck, UserX, Search as SearchIcon,
-  GraduationCap, ChevronRight,
+  GraduationCap, ChevronRight, User,
 } from 'lucide-react'
 import SearchInput from '@/components/ui/SearchInput'
-import DownloadClassZipButton from '../reports/DownloadClassZipButton'
+import ExpandCollapseToggle from '@/components/ui/ExpandCollapseToggle'
 import { setStudentActiveAction } from './actions'
 
 interface Student {
@@ -17,12 +17,12 @@ interface Student {
   is_active: boolean
   classId: string | null
   className: string | null
+  classTeacher: string | null
+  subjects: string[]
 }
 
 interface Props {
   rows: Student[]
-  term: string
-  year: string
 }
 
 function initials(name: string) {
@@ -33,17 +33,26 @@ function normalize(s: string) {
   return s.toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
 }
 
-export default function StudentsBrowser({ rows, term, year }: Props) {
+export default function StudentsBrowser({ rows }: Props) {
   const [query, setQuery] = useState('')
+  // Default every class group open — matches the prior `<details open>` UX.
+  const [openMap, setOpenMap] = useState<Record<string, boolean>>(() => {
+    const init: Record<string, boolean> = {}
+    for (const r of rows) if (r.classId) init[r.classId] = true
+    return init
+  })
 
   const filtered = useMemo(() => {
     const q = normalize(query.trim())
     if (!q) return rows
-    return rows.filter((s) =>
-      normalize(s.full_name).includes(q)
-      || (s.student_number && normalize(s.student_number).includes(q))
-      || (s.className && normalize(s.className).includes(q)),
-    )
+    return rows.filter((s) => {
+      if (normalize(s.full_name).includes(q)) return true
+      if (s.student_number && normalize(s.student_number).includes(q)) return true
+      if (s.className && normalize(s.className).includes(q)) return true
+      if (s.classTeacher && normalize(s.classTeacher).includes(q)) return true
+      for (const subj of s.subjects) if (normalize(subj).includes(q)) return true
+      return false
+    })
   }, [rows, query])
 
   const active = filtered.filter((s) => s.is_active)
@@ -72,14 +81,49 @@ export default function StudentsBrowser({ rows, term, year }: Props) {
     return { groups, noClassBucket }
   }, [active])
 
+  const classKeys = activeByClass.groups.map((g) => g.classId)
+  const isOpen = (classId: string) => !!query || !!openMap[classId]
+  const allOpen = classKeys.length > 0 && classKeys.every(isOpen)
+  const anyOpen = classKeys.some(isOpen)
+  function expandAll() {
+    setOpenMap((m) => {
+      const n = { ...m }
+      for (const k of classKeys) n[k] = true
+      return n
+    })
+  }
+  function collapseAll() {
+    setOpenMap((m) => {
+      const n = { ...m }
+      for (const k of classKeys) n[k] = false
+      return n
+    })
+  }
+  function toggle(classId: string) {
+    setOpenMap((m) => ({ ...m, [classId]: !isOpen(classId) }))
+  }
+
   return (
     <div className="space-y-5">
-      <SearchInput
-        value={query}
-        onChange={setQuery}
-        placeholder="Search by name, student #, or class…"
-        aria-label="Search students"
-      />
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex-1 min-w-[240px]">
+          <SearchInput
+            value={query}
+            onChange={setQuery}
+            placeholder="Search by name, ID, class, class teacher, or subject…"
+            aria-label="Search students"
+          />
+        </div>
+        {activeByClass.groups.length > 0 && (
+          <ExpandCollapseToggle
+            allOpen={allOpen}
+            anyOpen={anyOpen}
+            onExpandAll={expandAll}
+            onCollapseAll={collapseAll}
+            noun="classes"
+          />
+        )}
+      </div>
 
       {filtered.length === 0 ? (
         <div className="rounded-xl border border-dashed border-surface-border bg-surface-muted/60 px-6 py-10 text-center">
@@ -95,7 +139,12 @@ export default function StudentsBrowser({ rows, term, year }: Props) {
                 Active &middot; {active.length} across {activeByClass.groups.length} class{activeByClass.groups.length === 1 ? '' : 'es'}
               </h3>
               {activeByClass.groups.map((g) => (
-                <ClassGroup key={g.classId} group={g} term={term} year={year} />
+                <ClassGroup
+                  key={g.classId}
+                  group={g}
+                  open={isOpen(g.classId)}
+                  onToggle={() => toggle(g.classId)}
+                />
               ))}
             </section>
           )}
@@ -114,36 +163,48 @@ export default function StudentsBrowser({ rows, term, year }: Props) {
 }
 
 function ClassGroup({
-  group, term, year,
+  group, open, onToggle,
 }: {
   group: { classId: string; className: string; students: Student[] }
-  term: string
-  year: string
+  open: boolean
+  onToggle: () => void
 }) {
+  const classTeacher = group.students.find((s) => s.classTeacher)?.classTeacher ?? null
   return (
-    <details open className="card overflow-hidden">
-      <summary className="cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden flex items-center gap-3 px-4 sm:px-5 py-3 bg-surface-muted border-b border-surface-border">
+    <div className="card overflow-hidden">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="w-full flex items-center gap-3 px-4 sm:px-5 py-3 bg-surface-muted border-b border-surface-border cursor-pointer text-left hover:bg-surface-muted/80 transition-colors"
+      >
         <span className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-brand-accent/10 text-brand-accent flex-shrink-0">
           <GraduationCap className="w-4 h-4" />
         </span>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-ink font-mono">{group.className}</p>
-          <p className="text-[11px] text-ink-muted">{group.students.length} student{group.students.length === 1 ? '' : 's'}</p>
+          <p className="text-[11px] text-ink-muted">
+            {group.students.length} student{group.students.length === 1 ? '' : 's'}
+            {classTeacher && (
+              <>
+                <span className="text-ink-subtle"> · </span>
+                <span className="inline-flex items-center gap-0.5">
+                  <User className="w-3 h-3" /> {classTeacher}
+                </span>
+              </>
+            )}
+          </p>
         </div>
-        <DownloadClassZipButton
-          className={group.className}
-          studentIds={group.students.map((s) => s.id)}
-          term={term}
-          year={year}
-        />
-        <ChevronRight className="w-4 h-4 text-ink-subtle transition-transform [details[open]_&]:rotate-90 hidden sm:inline-flex" />
-      </summary>
-      <ul className="divide-y divide-surface-border">
-        {group.students.map((s) => (
-          <StudentItem key={s.id} student={s} />
-        ))}
-      </ul>
-    </details>
+        <ChevronRight className={'w-4 h-4 text-ink-subtle transition-transform ' + (open ? 'rotate-90' : '')} />
+      </button>
+      {open && (
+        <ul className="divide-y divide-surface-border">
+          {group.students.map((s) => (
+            <StudentItem key={s.id} student={s} />
+          ))}
+        </ul>
+      )}
+    </div>
   )
 }
 

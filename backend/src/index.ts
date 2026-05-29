@@ -59,6 +59,23 @@ app.use(morgan(NODE_ENV === 'production' ? 'combined' : 'dev'))
 // JSON body parsing
 app.use(express.json({ limit: '1mb' }))
 
+// Catch malformed JSON before it bubbles into the global error handler with a
+// noisy stack — return a uniform 400 so we don't reveal parser internals.
+app.use(
+  (
+    err: Error & { type?: string; status?: number },
+    _req: express.Request,
+    res: express.Response,
+    next: express.NextFunction,
+  ) => {
+    if (err && err.type === 'entity.parse.failed') {
+      res.status(400).json({ error: 'Invalid JSON body' })
+      return
+    }
+    next(err)
+  },
+)
+
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
 app.use('/health', healthRouter)
@@ -73,17 +90,28 @@ app.use((_req, res) => {
   res.status(404).send()
 })
 
-// Global error handler — swallow details in production
+// Global error handler — always logs server-side so prod incidents can be
+// diagnosed; never leaks stack traces, query strings, or framework messages to
+// the client.
 app.use(
   (
     err: Error,
-    _req: express.Request,
+    req: express.Request,
     res: express.Response,
     _next: express.NextFunction,
   ) => {
-    if (NODE_ENV !== 'production') {
-      console.error(err)
+    console.error(
+      `[error] ${req.method} ${req.path}`,
+      err instanceof Error ? err.stack ?? err.message : err,
+    )
+    // CORS rejections are surfaced as Errors with "Not allowed by CORS" message
+    // by the cors() origin callback. Treat those as 403 with no body — a
+    // generic 500 would obscure the real cause for the operator.
+    if (err?.message === 'Not allowed by CORS') {
+      res.status(403).send()
+      return
     }
+    if (res.headersSent) return
     res.status(500).send()
   },
 )

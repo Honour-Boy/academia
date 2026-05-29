@@ -14,12 +14,18 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // Fetch profile for role + name + onboarding/approval status
   const { data: profile } = await supabase
     .from('profiles')
-    .select('id, full_name, email, role, is_active, status, onboarding_complete')
+    .select('id, full_name, email, role, is_active, status, onboarding_complete, deleted_at')
     .eq('id', user.id)
     .single()
 
   // Unknown user (no profile row) — force out
   if (!profile) {
+    await supabase.auth.signOut()
+    redirect('/login')
+  }
+
+  // Account soft-deleted by an admin — burn the session.
+  if (profile.deleted_at) {
     await supabase.auth.signOut()
     redirect('/login')
   }

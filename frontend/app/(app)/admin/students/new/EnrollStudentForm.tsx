@@ -3,6 +3,7 @@
 import { useTransition, useState } from 'react'
 import { enrollStudentAction } from '../actions'
 import { Combobox } from '@/components/ui/Combobox'
+import { validateStudentNumber } from '@/lib/student-number-validation'
 import type { Class, Subject } from '@/types'
 
 interface Props {
@@ -16,8 +17,14 @@ export default function EnrollStudentForm({ classes, subjects, defaultTerm, defa
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
   const [selectedClassId, setSelectedClassId] = useState('')
+  const [studentNumber, setStudentNumber] = useState('')
 
   const selectedClass = classes.find((c) => c.id === selectedClassId)
+  const yearCheck = validateStudentNumber(
+    studentNumber || null,
+    selectedClass?.level ?? null,
+    defaultYear,
+  )
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -61,9 +68,19 @@ export default function EnrollStudentForm({ classes, subjects, defaultTerm, defa
           id="student_number"
           name="student_number"
           type="text"
+          value={studentNumber}
+          onChange={(e) => setStudentNumber(e.target.value)}
           placeholder="e.g. 2024/JSS/001"
           className="input mt-1"
         />
+        {yearCheck.reason && (
+          <p className="text-xs text-red-600 mt-1">{yearCheck.reason}</p>
+        )}
+        {selectedClass && yearCheck.expectedYear !== null && !yearCheck.reason && studentNumber && (
+          <p className="text-xs text-emerald-700 mt-1">
+            Year prefix matches {selectedClass.level} for {defaultYear}.
+          </p>
+        )}
       </div>
 
       {/* Class */}

@@ -23,6 +23,7 @@ export default async function ApprovalsPage() {
     .select('id, full_name, email, phone, role, wants_class_teacher, requested_class_id, created_at')
     .eq('status', 'pending')
     .eq('onboarding_complete', true)
+    .is('deleted_at', null)
     .order('created_at', { ascending: true })
 
   const rows = pending ?? []

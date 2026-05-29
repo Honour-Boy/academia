@@ -4,7 +4,8 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { duplicateNameError, findNameConflict } from '@/lib/name-uniqueness'
-import { requireWritableYear } from '@/lib/school-settings'
+import { requireWritableYear, getSchoolSettings } from '@/lib/school-settings'
+import { validateStudentNumber } from '@/lib/student-number-validation'
 
 // ── Enroll ────────────────────────────────────────────────────────────────────
 
@@ -28,6 +29,20 @@ export async function enrollStudentAction(formData: FormData) {
 
   const dup = await findNameConflict(admin, fullName)
   if (dup.conflict) return { error: duplicateNameError(dup.conflict) }
+
+  // Student-number year ↔ class-level guard (Nigerian school convention):
+  // a JSS 2 student in 2025/2026 must have entry year 2024.
+  if (studentNumber) {
+    const { data: classRow } = await admin
+      .from('classes').select('level').eq('id', classId).maybeSingle()
+    const { currentAcademicYear } = await getSchoolSettings()
+    const check = validateStudentNumber(
+      studentNumber,
+      classRow?.level ?? null,
+      currentAcademicYear,
+    )
+    if (!check.valid) return { error: check.reason ?? 'Invalid student number for this class' }
+  }
 
   // Create student
   const { data: student, error: studentErr } = await admin
@@ -73,6 +88,18 @@ export async function updateStudentAction(studentId: string, formData: FormData)
 
   const dup = await findNameConflict(admin, fullName, { ignoreStudentId: studentId })
   if (dup.conflict) return { error: duplicateNameError(dup.conflict) }
+
+  if (studentNumber) {
+    const { data: classRow } = await admin
+      .from('classes').select('level').eq('id', classId).maybeSingle()
+    const { currentAcademicYear } = await getSchoolSettings()
+    const check = validateStudentNumber(
+      studentNumber,
+      classRow?.level ?? null,
+      currentAcademicYear,
+    )
+    if (!check.valid) return { error: check.reason ?? 'Invalid student number for this class' }
+  }
 
   const { error: studentErr } = await admin
     .from('students')
@@ -135,6 +162,19 @@ export async function bulkEnrollStudentsAction(input: {
   const { data: profile } = await admin.from('profiles').select('role').eq('id', user.id).single()
   if (profile?.role !== 'ADMIN') return { enrolled: 0, failed: input.students.map((s) => ({ fullName: s.fullName, reason: 'Unauthorised' })) }
 
+  // Resolve class levels once for the whole batch so the student-number/year
+  // validator can run without N round-trips.
+  const classIds = Array.from(new Set(input.students.map((s) => s.classId).filter(Boolean)))
+  const classLevelMap = new Map<string, string>()
+  if (classIds.length > 0) {
+    const { data: classRows } = await admin
+      .from('classes').select('id, level').in('id', classIds)
+    for (const r of classRows ?? []) {
+      classLevelMap.set((r as any).id as string, (r as any).level as string)
+    }
+  }
+  const { currentAcademicYear } = await getSchoolSettings()
+
   let enrolled = 0
   const failed: Array<{ fullName: string; reason: string }> = []
 
@@ -151,6 +191,19 @@ export async function bulkEnrollStudentsAction(input: {
     if (s.subjectIds.length === 0) {
       failed.push({ fullName: name, reason: 'No subjects' })
       continue
+    }
+
+    // Student-number ↔ class-level year check.
+    if (s.studentNumber) {
+      const check = validateStudentNumber(
+        s.studentNumber,
+        classLevelMap.get(s.classId) ?? null,
+        currentAcademicYear,
+      )
+      if (!check.valid) {
+        failed.push({ fullName: name, reason: check.reason ?? 'Invalid student number for class' })
+        continue
+      }
     }
 
     // Catches duplicates against any existing staff/student. Inserts done earlier

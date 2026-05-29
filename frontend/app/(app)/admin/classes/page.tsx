@@ -26,7 +26,7 @@ export default async function ClassesAdminPage() {
     { data: ctas },
   ] = await Promise.all([
     supabase.from('classes').select('id, name, level, arm').order('level').order('arm'),
-    supabase.from('profiles').select('id, full_name').eq('role', 'TEACHER').eq('is_active', true).order('full_name'),
+    supabase.from('profiles').select('id, full_name').eq('role', 'TEACHER').eq('is_active', true).is('deleted_at', null).order('full_name'),
     supabase
       .from('class_teacher_assignments')
       .select('class_id, teacher_id, profiles!teacher_id(full_name)')

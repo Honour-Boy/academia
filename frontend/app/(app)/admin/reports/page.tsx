@@ -1,14 +1,12 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
-import Link from 'next/link'
-import { Eye, FileText, GraduationCap } from 'lucide-react'
+import { FileText } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { TERMS } from '@/lib/grade-utils'
 import { getSchoolSettings } from '@/lib/school-settings'
 import EmptyState from '@/components/ui/EmptyState'
-import DownloadReportButton from './DownloadReportButton'
 import DownloadGradesCSVButton from './DownloadGradesCSVButton'
-import DownloadClassZipButton from './DownloadClassZipButton'
+import ReportsBrowser, { type ReportRow } from './ReportsBrowser'
 
 export const metadata: Metadata = { title: 'Admin · Reports' }
 
@@ -35,18 +33,13 @@ export default async function ReportsAdminPage({ searchParams }: Props) {
     .eq('is_active', true)
     .order('full_name')
 
-  const byClass: Record<string, { id: string; full_name: string; studentNumber: string | null }[]> = {}
-  for (const s of students ?? []) {
-    const className = (s as any).classes?.name ?? 'Unassigned'
-    if (!byClass[className]) byClass[className] = []
-    byClass[className].push({
-      id: (s as any).id,
-      full_name: (s as any).full_name,
-      studentNumber: (s as any).student_number ?? null,
-    })
-  }
-  const classNames = Object.keys(byClass).sort()
-  const totalStudents = (students ?? []).length
+  const reportRows: ReportRow[] = (students ?? []).map((s: any) => ({
+    id: s.id as string,
+    full_name: s.full_name as string,
+    studentNumber: (s.student_number ?? null) as string | null,
+    className: s.classes?.name ?? 'Unassigned',
+  }))
+  const totalStudents = reportRows.length
 
   return (
     <div className="space-y-6">
@@ -89,7 +82,7 @@ export default async function ReportsAdminPage({ searchParams }: Props) {
         <button type="submit" className="btn-brand">Apply</button>
       </form>
 
-      {classNames.length === 0 ? (
+      {reportRows.length === 0 ? (
         <EmptyState
           icon={FileText}
           title="No students to report on"
@@ -97,49 +90,7 @@ export default async function ReportsAdminPage({ searchParams }: Props) {
           primaryAction={{ label: 'Enrol a student', href: '/admin/students/new' }}
         />
       ) : (
-        <div className="space-y-6">
-          {classNames.map((className) => (
-            <section key={className}>
-              <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
-                <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-ink-subtle">
-                  <GraduationCap className="w-3.5 h-3.5" /> {className}
-                  <span className="ml-1 text-ink-subtle/70">· {byClass[className].length}</span>
-                </h3>
-                <DownloadClassZipButton
-                  className={className}
-                  studentIds={byClass[className].map((s) => s.id)}
-                  term={term}
-                  year={year}
-                />
-              </div>
-              <div className="card divide-y divide-surface-border overflow-hidden">
-                {byClass[className].map((s) => (
-                  <div key={s.id} className="flex items-center gap-3 px-4 sm:px-5 py-3.5 hover:bg-surface-muted/60 transition-colors">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-ink truncate">{s.full_name}</p>
-                      {s.studentNumber && (
-                        <p className="text-xs text-ink-subtle font-mono mt-0.5">#{s.studentNumber}</p>
-                      )}
-                    </div>
-                    <Link
-                      href={`/reports/${s.id}?term=${encodeURIComponent(term)}&year=${encodeURIComponent(year)}`}
-                      aria-label={`Preview ${s.full_name}'s report`}
-                      className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-ink-muted hover:text-brand-primary hover:bg-brand-primary-light cursor-pointer transition-colors"
-                    >
-                      <Eye className="w-4 h-4" />
-                    </Link>
-                    <DownloadReportButton
-                      studentId={s.id}
-                      studentName={s.full_name}
-                      term={term}
-                      year={year}
-                    />
-                  </div>
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
+        <ReportsBrowser rows={reportRows} term={term} year={year} />
       )}
     </div>
   )

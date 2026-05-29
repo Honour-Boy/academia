@@ -31,6 +31,7 @@ export default async function TeachersPage() {
       .select('id, full_name, email, role, is_active, created_at')
       .in('role', ['TEACHER', 'ADMIN'])
       .eq('status', 'approved')
+      .is('deleted_at', null)
       .order('full_name'),
     supabase
       .from('teacher_assignments')
@@ -80,6 +81,10 @@ export default async function TeachersPage() {
     list.push({ id: s.id, name: s.name })
     registeredByTeacher.set(profileId, list)
   }
+
+  // Count active admins so the button can disable self-deactivation when this
+  // admin is the only one. Server-side action also enforces this.
+  const activeAdminCount = (teachers ?? []).filter((t) => t.role === 'ADMIN' && t.is_active).length
 
   const rows: TeacherRow[] = (teachers ?? []).map((t) => {
     const pairs = subjectPairsByTeacher.get(t.id) ?? []
@@ -132,7 +137,11 @@ export default async function TeachersPage() {
           primaryAction={{ label: 'Add a teacher', href: '/admin/teachers/new' }}
         />
       ) : (
-        <TeachersBrowser rows={rows} />
+        <TeachersBrowser
+          rows={rows}
+          currentUserId={user.id}
+          activeAdminCount={activeAdminCount}
+        />
       )}
     </div>
   )

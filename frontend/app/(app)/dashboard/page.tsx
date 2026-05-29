@@ -1,8 +1,9 @@
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import ClassSubjectCard from '@/components/dashboard/ClassSubjectCard'
+import SubjectGroupCard from '@/components/dashboard/SubjectGroupCard'
 import ClassTeacherCard from '@/components/dashboard/ClassTeacherCard'
+import GoToProfileButton from '@/components/dashboard/GoToProfileButton'
 import StatCard from '@/components/ui/StatCard'
 import EmptyState from '@/components/ui/EmptyState'
 import { getSchoolSettings } from '@/lib/school-settings'
@@ -54,17 +55,19 @@ export default async function DashboardPage() {
       const classId = a.classes?.id
       const subjectId = a.subjects?.id
 
-      const [{ count: totalStudents }, { data: gradeRows }] = await Promise.all([
+      // Restrict the denominator to students in this class who are actually
+      // enrolled in THIS subject (student_subjects). Counting the whole class
+      // inflates the total when only some students offer the subject — a
+      // teacher with 4 computer kids in a 7-student class was seeing 4/7
+      // instead of 4/4. Fall back to "all active students in the class" when
+      // no enrolment rows exist for the class so legacy admins who skipped
+      // subject pick at enrol time still get a sensible denominator.
+      const [{ data: classStudents }, { data: gradeRows }] = await Promise.all([
         supabase
           .from('students')
-          .select('id', { count: 'exact', head: true })
+          .select('id')
           .eq('class_id', classId)
           .eq('is_active', true),
-        // Pull all (non-null) grade rows so we can count unique students
-        // who have a FILLED row for every component. Previously this used a
-        // count of grade rows directly — for 3 components per student, a
-        // 5-student class with full grades reported 15 in a 8-student
-        // denominator, hence "15/8 = 188%".
         supabase
           .from('grades')
           .select('student_id, component_id')
@@ -75,8 +78,28 @@ export default async function DashboardPage() {
           .not('score', 'is', null),
       ])
 
+      const classStudentIds = (classStudents ?? []).map((s: { id: string }) => s.id)
+      let enrolledIds: string[] = classStudentIds
+      if (classStudentIds.length > 0) {
+        const { data: enrollments } = await supabase
+          .from('student_subjects')
+          .select('student_id')
+          .eq('subject_id', subjectId)
+          .in('student_id', classStudentIds)
+        const enrolled = (enrollments ?? []).map((e: { student_id: string }) => e.student_id)
+        if (enrolled.length > 0) enrolledIds = enrolled
+      }
+      const enrolledSet = new Set(enrolledIds)
+      const totalStudents = enrolledIds.length
+
+      // Only count grade rows for students who actually offer the subject; a
+      // stale grade row for a student who dropped the subject shouldn't bump
+      // the numerator.
       const byStudent = new Map<string, Set<string>>()
+      let filledSlots = 0
       for (const g of (gradeRows ?? []) as { student_id: string; component_id: string }[]) {
+        if (!enrolledSet.has(g.student_id)) continue
+        filledSlots += 1
         const set = byStudent.get(g.student_id) ?? new Set<string>()
         set.add(g.component_id)
         byStudent.set(g.student_id, set)
@@ -88,14 +111,46 @@ export default async function DashboardPage() {
 
       return {
         ...a,
-        totalStudents: totalStudents ?? 0,
+        totalStudents,
         gradedStudents,
-        filledSlots: (gradeRows ?? []).length,
+        filledSlots,
       }
     }),
   )
 
-  const subjectCount = enrichedSubject.length
+  // Group assignments by subject — one compact card per subject in the UI,
+  // even if the teacher teaches that subject in multiple classes. Stats are
+  // summed across classes.
+  type SubjectGroup = {
+    subjectId: string
+    subjectName: string
+    classCount: number
+    totalStudents: number
+    gradedStudents: number
+  }
+  const subjectGroupMap = new Map<string, SubjectGroup>()
+  for (const a of enrichedSubject) {
+    const sid: string | undefined = a.subjects?.id
+    const sname: string | undefined = a.subjects?.name
+    if (!sid || !sname) continue
+    const g = subjectGroupMap.get(sid) ?? {
+      subjectId: sid,
+      subjectName: sname,
+      classCount: 0,
+      totalStudents: 0,
+      gradedStudents: 0,
+    }
+    g.classCount += 1
+    g.totalStudents += a.totalStudents
+    g.gradedStudents += a.gradedStudents
+    subjectGroupMap.set(sid, g)
+  }
+  const subjectGroups = Array.from(subjectGroupMap.values()).sort((a, b) =>
+    a.subjectName.localeCompare(b.subjectName),
+  )
+
+  const subjectCount = subjectGroups.length
+  const classAssignmentCount = enrichedSubject.length
   const classCount = (classTeacherAssignments ?? []).length
   const compsPerSubject = componentCount ?? 0
   // "Score slots" = students × components per subject. Apples-to-apples
@@ -123,12 +178,21 @@ export default async function DashboardPage() {
               ? 'Pick up where you left off. Tap any class to record scores, attendance, or remarks.'
               : 'You’ll see your classes and subjects here once an admin assigns you.'}
           </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <GoToProfileButton />
+          </div>
         </div>
       </section>
 
       {hasAnyAssignment && (
         <section className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
-          <StatCard label="Subjects assigned" value={subjectCount} icon={BookOpen} tone="crimson" />
+          <StatCard
+            label="Subjects assigned"
+            value={subjectCount}
+            icon={BookOpen}
+            tone="crimson"
+            hint={subjectCount > 0 ? `${classAssignmentCount} class assignment${classAssignmentCount === 1 ? '' : 's'}` : undefined}
+          />
           <StatCard label="Classes I lead"   value={classCount}   icon={Users}    tone="navy" />
           <StatCard
             label="Grading complete"
@@ -165,17 +229,16 @@ export default async function DashboardPage() {
             <BookOpen className="w-3.5 h-3.5" /> Subject teacher
           </h2>
           <div className="grid gap-3 sm:grid-cols-2">
-            {enrichedSubject.map((a: any) => (
-              <ClassSubjectCard
-                key={a.id}
-                classId={a.classes?.id}
-                subjectId={a.subjects?.id}
-                className={a.classes?.name}
-                subjectName={a.subjects?.name}
-                totalStudents={a.totalStudents}
-                gradedStudents={a.gradedStudents}
-                term={a.term}
-                academicYear={a.academic_year}
+            {subjectGroups.map((g) => (
+              <SubjectGroupCard
+                key={g.subjectId}
+                subjectId={g.subjectId}
+                subjectName={g.subjectName}
+                classCount={g.classCount}
+                totalStudents={g.totalStudents}
+                gradedStudents={g.gradedStudents}
+                term={term}
+                academicYear={year}
               />
             ))}
           </div>

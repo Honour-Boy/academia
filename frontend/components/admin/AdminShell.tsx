@@ -21,6 +21,7 @@ import {
   ChevronRight,
   Settings,
   Loader2,
+  UserCircle,
 } from 'lucide-react'
 import { Sheet, SheetContent, SheetTitle, SheetClose } from '@/components/ui/Sheet'
 
@@ -88,7 +89,13 @@ export default function AdminShell({ children, profile, pendingCount, schoolName
       <aside className="hidden lg:flex w-72 fixed inset-y-0 left-0 z-30 flex-col bg-gradient-to-b from-brand-accent via-brand-accent-dark to-brand-primary-dark text-white">
         {/* Top accent strip */}
         <span aria-hidden="true" className="h-1 bg-gradient-to-r from-brand-primary via-brand-secondary to-brand-primary" />
-        <SidebarBody nav={nav} isActive={isActive} schoolName={schoolName} />
+        <SidebarBody
+          nav={nav}
+          isActive={isActive}
+          schoolName={schoolName}
+          signingOut={signingOut}
+          onSignOut={signOut}
+        />
       </aside>
 
       {/* ── Mobile drawer (Sheet) ───────────────────────────────────── */}
@@ -96,7 +103,14 @@ export default function AdminShell({ children, profile, pendingCount, schoolName
         <SheetContent side="left" className="bg-gradient-to-b from-brand-accent via-brand-accent-dark to-brand-primary-dark text-white">
           <SheetTitle>Admin navigation</SheetTitle>
           <span aria-hidden="true" className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-brand-primary via-brand-secondary to-brand-primary" />
-          <SidebarBody nav={nav} isActive={isActive} schoolName={schoolName} onNavigate={() => setMobileOpen(false)} />
+          <SidebarBody
+            nav={nav}
+            isActive={isActive}
+            schoolName={schoolName}
+            onNavigate={() => setMobileOpen(false)}
+            signingOut={signingOut}
+            onSignOut={signOut}
+          />
         </SheetContent>
       </Sheet>
 
@@ -166,9 +180,11 @@ interface SidebarBodyProps {
   isActive: (href: string) => boolean
   schoolName: string
   onNavigate?: () => void
+  signingOut: boolean
+  onSignOut: () => void
 }
 
-function SidebarBody({ nav, isActive, schoolName, onNavigate }: SidebarBodyProps) {
+function SidebarBody({ nav, isActive, schoolName, onNavigate, signingOut, onSignOut }: SidebarBodyProps) {
   const Wrap = onNavigate ? SheetClose : 'div'
   return (
     <div className="flex flex-col h-full px-4 pt-5 pb-6">
@@ -219,9 +235,28 @@ function SidebarBody({ nav, isActive, schoolName, onNavigate }: SidebarBodyProps
         })}
       </nav>
 
-      {/* Footer */}
-      <div className="pt-5 mt-5 border-t border-white/10">
-        <p className="text-white/40 text-[11px] leading-relaxed text-center">
+      {/* Footer — explicit sign-out + profile shortcuts */}
+      <div className="pt-5 mt-5 border-t border-white/10 space-y-2">
+        <Link
+          href="/profile"
+          onClick={onNavigate}
+          className="group flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium cursor-pointer transition-colors text-white/65 hover:text-white hover:bg-white/10"
+        >
+          <UserCircle className="w-4 h-4 flex-shrink-0 text-white/50 group-hover:text-white/80" />
+          <span className="flex-1">My profile</span>
+        </Link>
+        <button
+          type="button"
+          onClick={onSignOut}
+          disabled={signingOut}
+          className="group w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium cursor-pointer transition-colors text-white/65 hover:text-white hover:bg-white/10 disabled:opacity-60 disabled:cursor-wait"
+        >
+          {signingOut
+            ? <Loader2 className="w-4 h-4 flex-shrink-0 animate-spin text-white/80" />
+            : <LogOut className="w-4 h-4 flex-shrink-0 text-white/50 group-hover:text-white/80" />}
+          <span className="flex-1 text-left">{signingOut ? 'Signing out…' : 'Sign out'}</span>
+        </button>
+        <p className="text-white/40 text-[11px] leading-relaxed text-center pt-2">
           Authorised access only.<br />
           Activity is logged.
         </p>

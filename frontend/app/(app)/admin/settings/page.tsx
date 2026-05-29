@@ -6,6 +6,7 @@ import { createClient, createAdminClient } from '@/lib/supabase/server'
 import type { Term } from '@/lib/grade-utils'
 import { listYearArchives } from '@/lib/year-archives'
 import SettingsForm from './SettingsForm'
+import GoToProfileCard from './GoToProfileCard'
 
 export const metadata: Metadata = { title: 'Admin · Settings' }
 
@@ -56,6 +57,8 @@ export default async function AdminSettingsPage() {
           </p>
         </div>
       </div>
+
+      <GoToProfileCard />
 
       <div className="card p-5 sm:p-6 space-y-5">
         <div>

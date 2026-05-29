@@ -12,25 +12,32 @@ import type { Class, Subject } from '@/types'
 import { bulkEnrollStudentsAction } from '../actions'
 import {
   parsePastedRoster, resolveRows, fromSpreadsheetRows, rowIsSubmittable, rowSkipReason,
+  suggestSubjects,
   type ResolvedRow,
 } from './roster-parser'
+import { validateStudentNumber } from '@/lib/student-number-validation'
 
 interface Props {
   classes: (Class & { classTeacherName: string | null })[]
   subjects: Subject[]
+  /** Current academic year (YYYY/YYYY). Used to validate student-number prefix. */
+  academicYear: string
 }
 
 type InputMode = 'paste' | 'upload'
 
-const CHUNK = 8
+// Push one student at a time so the progress bar advances per row and the
+// admin can watch succeeded/failed counts move in real time. Previously
+// CHUNK=8 made a 5-student paste look like 0/5 → 5/5 with no intermediate.
+const CHUNK = 1
 
-export default function RosterImport({ classes, subjects }: Props) {
+export default function RosterImport({ classes, subjects, academicYear }: Props) {
   const router = useRouter()
   const [mode, setMode] = useState<InputMode>('paste')
   const [text, setText] = useState('')
   const [previewed, setPreviewed] = useState<ResolvedRow[] | null>(null)
   const [results, setResults] = useState<{ enrolled: number; failed: Array<{ fullName: string; reason: string }> } | null>(null)
-  const [progress, setProgress] = useState({ done: 0, total: 0 })
+  const [progress, setProgress] = useState({ done: 0, total: 0, succeeded: 0, failed: 0 })
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [uploadName, setUploadName] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
@@ -60,11 +67,27 @@ export default function RosterImport({ classes, subjects }: Props) {
     setPreviewed(previewed.filter((_, i) => i !== idx))
   }
 
+  // Click-to-fix: swap an unmatched subject for a catalogue suggestion on the
+  // specific preview row. Mutates only the previewed state, not the source
+  // textarea — the admin still sees their original paste verbatim.
+  function applySubjectFix(rowIdx: number, originalRaw: string, replacement: { id: string; name: string }) {
+    if (!previewed) return
+    setPreviewed(previewed.map((row, i) => {
+      if (i !== rowIdx) return row
+      const subjectIds = row.subjectIds.includes(replacement.id)
+        ? row.subjectIds
+        : [...row.subjectIds, replacement.id]
+      const subjectsRaw = row.subjectsRaw.map((s) => s === originalRaw ? replacement.name : s)
+      const unmatchedSubjects = row.unmatchedSubjects.filter((s) => s !== originalRaw)
+      return { ...row, subjectIds, subjectsRaw, unmatchedSubjects }
+    }))
+  }
+
   function clear() {
     setText('')
     setPreviewed(null)
     setResults(null)
-    setProgress({ done: 0, total: 0 })
+    setProgress({ done: 0, total: 0, succeeded: 0, failed: 0 })
     setUploadError(null)
     setUploadName(null)
   }
@@ -135,7 +158,8 @@ export default function RosterImport({ classes, subjects }: Props) {
       chunks.push(submittable.slice(i, i + CHUNK))
     }
 
-    setProgress({ done: 0, total: submittable.length })
+    setProgress({ done: 0, total: submittable.length, succeeded: 0, failed: 0 })
+    setResults(null)
     let totalEnrolled = 0
     const allFailed: Array<{ fullName: string; reason: string }> = []
 
@@ -151,14 +175,32 @@ export default function RosterImport({ classes, subjects }: Props) {
         })
         totalEnrolled += r.enrolled
         allFailed.push(...r.failed)
-        setProgress((p) => ({ ...p, done: p.done + chunk.length }))
+        // Update per-chunk so the user watches succeeded / failed counters tick
+        // in real time alongside the progress bar.
+        setProgress((p) => ({
+          done: p.done + chunk.length,
+          total: p.total,
+          succeeded: p.succeeded + r.enrolled,
+          failed: p.failed + r.failed.length,
+        }))
       }
 
       setResults({ enrolled: totalEnrolled, failed: allFailed })
       if (allFailed.length === 0) {
-        toast.success(`Enrolled ${totalEnrolled} student${totalEnrolled === 1 ? '' : 's'}`)
-      } else {
+        toast.success(`Enrolled ${totalEnrolled} student${totalEnrolled === 1 ? '' : 's'} — form reset.`)
+        // Full success → wipe the textarea + preview so the admin can paste a
+        // fresh batch immediately. The results card stays briefly to confirm.
+        setText('')
+        setPreviewed(null)
+        setUploadName(null)
+      } else if (totalEnrolled > 0) {
         toast.warning(`Enrolled ${totalEnrolled}, ${allFailed.length} failed — see list below`)
+        // Partial success → drop the rows that landed; keep failed rows in the
+        // preview so the admin can fix them and resubmit. Match by fullName.
+        const failedNameSet = new Set(allFailed.map((f) => f.fullName))
+        setPreviewed((prev) => (prev ?? []).filter((r) => failedNameSet.has(r.fullName)))
+      } else {
+        toast.error(`None of the ${allFailed.length} rows could be enrolled — see list below`)
       }
       router.refresh()
     })
@@ -292,7 +334,12 @@ export default function RosterImport({ classes, subjects }: Props) {
               const failed = failedNames.has(row.fullName)
               const reason = results?.failed.find((f) => f.fullName === row.fullName)?.reason
               const skipReason = rowSkipReason(row)
-              const willSkip = !!skipReason
+              // Year-prefix check — only meaningful once class is resolved.
+              const cls = row.classId ? classes.find((c) => c.id === row.classId) : null
+              const yearCheck = cls
+                ? validateStudentNumber(row.studentNumber, cls.level, academicYear)
+                : { valid: true, reason: null as string | null, expectedYear: null, foundYear: null }
+              const willSkip = !!skipReason || !yearCheck.valid
               return (
                 <li
                   key={idx}
@@ -320,9 +367,30 @@ export default function RosterImport({ classes, subjects }: Props) {
                         const s = subjects.find((x) => x.id === sid)
                         return <Chip key={sid} kind="ok" label={s?.name ?? '?'} />
                       })}
-                      {row.unmatchedSubjects.map((s, i) => (
-                        <Chip key={`u-${i}`} kind="bad" label={s} title="no matching subject" />
-                      ))}
+                      {row.unmatchedSubjects.map((s, i) => {
+                        const suggestions = suggestSubjects(s, subjects, 3)
+                        return (
+                          <span key={`u-${i}`} className="inline-flex items-center gap-1 flex-wrap">
+                            <Chip kind="bad" label={s} title="no matching subject" />
+                            {suggestions.length > 0 && (
+                              <>
+                                <span className="text-[10px] text-ink-subtle">→</span>
+                                {suggestions.map((sug) => (
+                                  <button
+                                    key={sug.id}
+                                    type="button"
+                                    onClick={() => applySubjectFix(idx, s, sug)}
+                                    title={`Replace "${s}" with "${sug.name}"`}
+                                    className="inline-flex items-center text-[10px] font-medium px-1.5 py-0.5 rounded font-mono bg-brand-secondary-light text-brand-accent-dark ring-1 ring-brand-secondary/40 hover:bg-brand-secondary hover:text-white cursor-pointer transition-colors"
+                                  >
+                                    {sug.name}
+                                  </button>
+                                ))}
+                              </>
+                            )}
+                          </span>
+                        )
+                      })}
                       {row.subjectIds.length === 0 && row.unmatchedSubjects.length === 0 && (
                         <Chip kind="bad" label="no subjects" />
                       )}
@@ -332,7 +400,7 @@ export default function RosterImport({ classes, subjects }: Props) {
                     {willSkip && !failed && (
                       <p className="mt-1.5 text-[11px] text-brand-secondary-dark inline-flex items-start gap-1">
                         <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                        <span><span className="font-semibold">Skipped:</span> {skipReason}</span>
+                        <span><span className="font-semibold">Skipped:</span> {skipReason ?? yearCheck.reason}</span>
                       </p>
                     )}
                   </div>
@@ -360,32 +428,52 @@ export default function RosterImport({ classes, subjects }: Props) {
 
       {results && (
         <div className={cn(
-          'rounded-xl p-4 border text-sm',
+          'rounded-xl p-4 border text-sm space-y-2',
           results.failed.length === 0
             ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-            : 'bg-brand-secondary-light border-brand-secondary/40 text-brand-accent-dark',
+            : results.enrolled === 0
+              ? 'bg-red-50 border-red-200 text-red-800'
+              : 'bg-brand-secondary-light border-brand-secondary/40 text-brand-accent-dark',
         )}>
           <p className="font-semibold flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4" />
-            {results.enrolled} enrolled
-            {results.failed.length > 0 && ` · ${results.failed.length} failed`}
+            {results.failed.length === 0
+              ? `All ${results.enrolled} students enrolled successfully`
+              : results.enrolled === 0
+                ? `0 enrolled · ${results.failed.length} failed`
+                : `${results.enrolled} enrolled · ${results.failed.length} failed`}
           </p>
-          {results.failed.length === 0 && (
-            <p className="text-xs mt-1">All clear. They&apos;ll show up in /admin/students.</p>
+          {results.failed.length === 0 ? (
+            <p className="text-xs">They&apos;ll show up in /admin/students.</p>
+          ) : (
+            <p className="text-xs">
+              {results.enrolled > 0 ? 'Successful rows are saved. ' : ''}
+              Fix the highlighted rows in the preview above, remove the ones that already succeeded, then re-submit.
+            </p>
           )}
         </div>
       )}
 
       <div className="flex items-center gap-3 flex-wrap pt-2 border-t border-surface-border">
         {progress.total > 0 && (
-          <div className="flex items-center gap-2 flex-1 min-w-[140px]">
+          <div className="flex items-center gap-3 flex-1 min-w-[200px]">
             <div className="flex-1 h-1.5 bg-surface-border rounded-full overflow-hidden">
               <div
                 className="h-full rounded-full bg-gradient-to-r from-brand-primary to-brand-secondary transition-all duration-300"
                 style={{ width: `${(progress.done / progress.total) * 100}%` }}
               />
             </div>
-            <span className="text-[11px] font-mono text-ink-muted">{progress.done}/{progress.total}</span>
+            <span className="text-[11px] font-mono text-ink-muted whitespace-nowrap">
+              {progress.done}/{progress.total}
+            </span>
+            <span className="text-[11px] font-mono text-emerald-700 whitespace-nowrap">
+              ✓ {progress.succeeded}
+            </span>
+            {progress.failed > 0 && (
+              <span className="text-[11px] font-mono text-red-700 whitespace-nowrap">
+                ✗ {progress.failed}
+              </span>
+            )}
           </div>
         )}
         <button
