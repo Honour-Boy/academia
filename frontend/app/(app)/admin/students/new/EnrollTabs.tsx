@@ -28,16 +28,21 @@ export default function EnrollTabs({ classes, subjects, defaultTerm, defaultYear
         </TabButton>
       </div>
 
-      {tab === 'single' ? (
+      {/* Keep both forms mounted and toggle visibility instead of unmounting.
+          Otherwise the bulk-paste textarea and preview state get wiped every
+          time the admin peeks at the single-student tab — a foot-gun the user
+          flagged after losing a half-typed roster. */}
+      <div className={tab === 'single' ? '' : 'hidden'} aria-hidden={tab !== 'single'}>
         <EnrollStudentForm
           classes={classes}
           subjects={subjects}
           defaultTerm={defaultTerm}
           defaultYear={defaultYear}
         />
-      ) : (
+      </div>
+      <div className={tab === 'bulk' ? '' : 'hidden'} aria-hidden={tab !== 'bulk'}>
         <RosterImport classes={classes} subjects={subjects} />
-      )}
+      </div>
     </div>
   )
 }

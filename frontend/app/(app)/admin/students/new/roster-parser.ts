@@ -41,6 +41,72 @@ function buildIndex(rows: { id: string; name: string }[]): Map<string, string> {
   return idx
 }
 
+// Strip a trailing 's' so "maths" matches "mathematics" — the user paste case
+// that triggered this. Length-3 minimum so "is", "us" etc. don't get mangled.
+function stripPluralS(s: string): string {
+  return s.length > 3 && s.endsWith('s') ? s.slice(0, -1) : s
+}
+
+/**
+ * Fuzzy-match a free-text subject name against the catalogue. Strategy:
+ *   1. Exact normalize match (already what buildIndex did).
+ *   2. Prefix match either way after stripping trailing 's' — so "maths" finds
+ *      "Mathematics", "eng" finds "English", "chem" finds "Chemistry".
+ *   3. Among multiple prefix hits, pick the catalogue entry with the SHORTEST
+ *      name to bias toward "Mathematics" over "Further Mathematics" when the
+ *      user types "math".
+ *
+ * Returns null when no candidate matches. The single-character / 2-letter
+ * floor in step 2 prevents nonsense input from matching the first subject
+ * starting with that letter.
+ */
+export function findSubjectIdFuzzy(input: string, subjects: { id: string; name: string }[]): string | null {
+  const inp = normalize(input)
+  if (!inp) return null
+  // Exact match.
+  for (const s of subjects) {
+    if (normalize(s.name) === inp) return s.id
+  }
+  const inpS = stripPluralS(inp)
+  if (inpS.length < 3) return null
+  let best: { id: string; len: number } | null = null
+  for (const s of subjects) {
+    const name = normalize(s.name)
+    const nameS = stripPluralS(name)
+    if (nameS.startsWith(inpS) || inpS.startsWith(nameS)) {
+      if (!best || name.length < best.len) best = { id: s.id, len: name.length }
+    }
+  }
+  return best?.id ?? null
+}
+
+/**
+ * Looser variant for autocomplete suggestion lists. Returns matches ranked by
+ * prefix-vs-substring and shortest-name tiebreak, capped at `limit`.
+ */
+export function suggestSubjects(
+  input: string,
+  subjects: { id: string; name: string }[],
+  limit = 6,
+): { id: string; name: string }[] {
+  const inp = normalize(input)
+  if (!inp) return []
+  const inpS = stripPluralS(inp)
+  const scored: { s: { id: string; name: string }; score: number }[] = []
+  for (const s of subjects) {
+    const name = normalize(s.name)
+    const nameS = stripPluralS(name)
+    let score = -1
+    if (name === inp) score = 1000
+    else if (nameS.startsWith(inpS)) score = 500 - name.length
+    else if (inpS.startsWith(nameS)) score = 400 - name.length
+    else if (name.includes(inpS)) score = 200 - name.length
+    if (score > 0) scored.push({ s, score })
+  }
+  scored.sort((a, b) => b.score - a.score)
+  return scored.slice(0, limit).map((x) => x.s)
+}
+
 // ── Paste parsing ─────────────────────────────────────────────────────────────
 // Expected format per line (pipe-delimited):
 //   Name | Student ID | Class | subject1, subject2, …
@@ -146,16 +212,24 @@ export function fromSpreadsheetRows(headers: string[], rows: string[][]): Roster
 // ── Resolution against catalogue ──────────────────────────────────────────────
 export function resolveRows(rows: RosterInputRow[], cat: Catalogue): ResolvedRow[] {
   const classIdx = buildIndex(cat.classes)
-  const subjectIdx = buildIndex(cat.subjects)
 
   return rows.map((r) => {
     const classId = r.className ? classIdx.get(normalize(r.className)) ?? null : null
     const subjectIds: string[] = []
     const unmatchedSubjects: string[] = []
+    const seen = new Set<string>()
     for (const s of r.subjectsRaw) {
-      const id = subjectIdx.get(normalize(s))
-      if (id) subjectIds.push(id)
-      else unmatchedSubjects.push(s)
+      // Exact + fuzzy (prefix / trailing-s) match so "maths" → Mathematics,
+      // "eng" → English. Falls through to unmatched when nothing scores.
+      const id = findSubjectIdFuzzy(s, cat.subjects)
+      if (id) {
+        if (!seen.has(id)) {
+          subjectIds.push(id)
+          seen.add(id)
+        }
+      } else {
+        unmatchedSubjects.push(s)
+      }
     }
     return {
       fullName: r.fullName,
