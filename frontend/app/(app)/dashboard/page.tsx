@@ -1,13 +1,13 @@
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import ClassSubjectCard from '@/components/dashboard/ClassSubjectCard'
+import SubjectGroupCard from '@/components/dashboard/SubjectGroupCard'
 import ClassTeacherCard from '@/components/dashboard/ClassTeacherCard'
+import GoToProfileButton from '@/components/dashboard/GoToProfileButton'
 import StatCard from '@/components/ui/StatCard'
 import EmptyState from '@/components/ui/EmptyState'
 import { getSchoolSettings } from '@/lib/school-settings'
-import Link from 'next/link'
-import { BookOpen, Users, Activity, Sparkles, UserCircle, ChevronRight } from 'lucide-react'
+import { BookOpen, Users, Activity, Sparkles } from 'lucide-react'
 
 export const metadata: Metadata = { title: 'Dashboard' }
 
@@ -118,7 +118,39 @@ export default async function DashboardPage() {
     }),
   )
 
-  const subjectCount = enrichedSubject.length
+  // Group assignments by subject — one compact card per subject in the UI,
+  // even if the teacher teaches that subject in multiple classes. Stats are
+  // summed across classes.
+  type SubjectGroup = {
+    subjectId: string
+    subjectName: string
+    classCount: number
+    totalStudents: number
+    gradedStudents: number
+  }
+  const subjectGroupMap = new Map<string, SubjectGroup>()
+  for (const a of enrichedSubject) {
+    const sid: string | undefined = a.subjects?.id
+    const sname: string | undefined = a.subjects?.name
+    if (!sid || !sname) continue
+    const g = subjectGroupMap.get(sid) ?? {
+      subjectId: sid,
+      subjectName: sname,
+      classCount: 0,
+      totalStudents: 0,
+      gradedStudents: 0,
+    }
+    g.classCount += 1
+    g.totalStudents += a.totalStudents
+    g.gradedStudents += a.gradedStudents
+    subjectGroupMap.set(sid, g)
+  }
+  const subjectGroups = Array.from(subjectGroupMap.values()).sort((a, b) =>
+    a.subjectName.localeCompare(b.subjectName),
+  )
+
+  const subjectCount = subjectGroups.length
+  const classAssignmentCount = enrichedSubject.length
   const classCount = (classTeacherAssignments ?? []).length
   const compsPerSubject = componentCount ?? 0
   // "Score slots" = students × components per subject. Apples-to-apples
@@ -147,21 +179,20 @@ export default async function DashboardPage() {
               : 'You’ll see your classes and subjects here once an admin assigns you.'}
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
-            <Link
-              href="/profile"
-              className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg text-xs sm:text-sm font-semibold bg-white/15 text-white hover:bg-white/25 backdrop-blur-sm ring-1 ring-white/20 cursor-pointer transition-colors"
-            >
-              <UserCircle className="w-4 h-4" />
-              <span>Go to profile</span>
-              <ChevronRight className="w-3.5 h-3.5 opacity-70" />
-            </Link>
+            <GoToProfileButton />
           </div>
         </div>
       </section>
 
       {hasAnyAssignment && (
         <section className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
-          <StatCard label="Subjects assigned" value={subjectCount} icon={BookOpen} tone="crimson" />
+          <StatCard
+            label="Subjects assigned"
+            value={subjectCount}
+            icon={BookOpen}
+            tone="crimson"
+            hint={subjectCount > 0 ? `${classAssignmentCount} class assignment${classAssignmentCount === 1 ? '' : 's'}` : undefined}
+          />
           <StatCard label="Classes I lead"   value={classCount}   icon={Users}    tone="navy" />
           <StatCard
             label="Grading complete"
@@ -198,17 +229,16 @@ export default async function DashboardPage() {
             <BookOpen className="w-3.5 h-3.5" /> Subject teacher
           </h2>
           <div className="grid gap-3 sm:grid-cols-2">
-            {enrichedSubject.map((a: any) => (
-              <ClassSubjectCard
-                key={a.id}
-                classId={a.classes?.id}
-                subjectId={a.subjects?.id}
-                className={a.classes?.name}
-                subjectName={a.subjects?.name}
-                totalStudents={a.totalStudents}
-                gradedStudents={a.gradedStudents}
-                term={a.term}
-                academicYear={a.academic_year}
+            {subjectGroups.map((g) => (
+              <SubjectGroupCard
+                key={g.subjectId}
+                subjectId={g.subjectId}
+                subjectName={g.subjectName}
+                classCount={g.classCount}
+                totalStudents={g.totalStudents}
+                gradedStudents={g.gradedStudents}
+                term={term}
+                academicYear={year}
               />
             ))}
           </div>

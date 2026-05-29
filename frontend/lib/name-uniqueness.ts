@@ -44,8 +44,10 @@ export async function findNameConflict(
   const canon = canonicalName(rawName)
   if (!canon) return { conflict: false }
 
+  // Don't trip on soft-deleted profiles — the row is preserved for audit-log
+  // referential integrity but the name should free up for reuse.
   const [{ data: profiles }, { data: students }] = await Promise.all([
-    admin.from('profiles').select('id, full_name'),
+    admin.from('profiles').select('id, full_name').is('deleted_at', null),
     admin.from('students').select('id, full_name'),
   ])
 

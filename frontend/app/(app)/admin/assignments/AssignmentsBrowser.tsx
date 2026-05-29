@@ -6,6 +6,7 @@ import {
   Search as SearchIcon,
 } from 'lucide-react'
 import SearchInput from '@/components/ui/SearchInput'
+import ExpandCollapseToggle from '@/components/ui/ExpandCollapseToggle'
 import EmptyState from '@/components/ui/EmptyState'
 import RemoveAssignmentButton from './RemoveAssignmentButton'
 
@@ -27,6 +28,7 @@ function normalize(s: string) {
 
 export default function AssignmentsBrowser({ rows }: Props) {
   const [query, setQuery] = useState('')
+  const [openMap, setOpenMap] = useState<Record<string, boolean>>({})
 
   const filtered = useMemo(() => {
     const q = normalize(query.trim())
@@ -58,14 +60,49 @@ export default function AssignmentsBrowser({ rows }: Props) {
     )
   }
 
+  // Controlled open-state: search auto-opens every visible group, manual
+  // toggle persists otherwise. allOpen/anyOpen drive the global toggle.
+  const teacherKeys = groupedByTeacher.map((g) => g.teacherId)
+  const isOpen = (teacherId: string) => !!query || !!openMap[teacherId]
+  const allOpen = teacherKeys.length > 0 && teacherKeys.every(isOpen)
+  const anyOpen = teacherKeys.some(isOpen)
+  function expandAll() {
+    setOpenMap((m) => {
+      const n = { ...m }
+      for (const k of teacherKeys) n[k] = true
+      return n
+    })
+  }
+  function collapseAll() {
+    setOpenMap((m) => {
+      const n = { ...m }
+      for (const k of teacherKeys) n[k] = false
+      return n
+    })
+  }
+  function toggle(teacherId: string) {
+    setOpenMap((m) => ({ ...m, [teacherId]: !isOpen(teacherId) }))
+  }
+
   return (
     <div className="space-y-3">
-      <SearchInput
-        value={query}
-        onChange={setQuery}
-        placeholder="Search by teacher, subject, or class…"
-        aria-label="Search assignments"
-      />
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex-1 min-w-[240px]">
+          <SearchInput
+            value={query}
+            onChange={setQuery}
+            placeholder="Search by teacher, subject, or class…"
+            aria-label="Search assignments"
+          />
+        </div>
+        <ExpandCollapseToggle
+          allOpen={allOpen}
+          anyOpen={anyOpen}
+          onExpandAll={expandAll}
+          onCollapseAll={collapseAll}
+          noun="teachers"
+        />
+      </div>
 
       <div className="flex items-center justify-between text-xs text-ink-muted">
         <span>
@@ -84,40 +121,50 @@ export default function AssignmentsBrowser({ rows }: Props) {
         </div>
       ) : (
         <div className="card divide-y divide-surface-border overflow-hidden">
-          {groupedByTeacher.map((g) => (
-            <details key={g.teacherId} className="group" open={!!query}>
-              <summary className="cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden flex items-center gap-3 px-4 sm:px-5 py-3.5 hover:bg-surface-muted/60 transition-colors">
-                <span className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-brand-accent/10 text-brand-accent flex-shrink-0">
-                  <User className="w-4 h-4" />
-                </span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-ink truncate">{g.teacherName}</p>
-                  <p className="text-xs text-ink-muted mt-0.5">
-                    {g.items.length} assignment{g.items.length === 1 ? '' : 's'}
-                  </p>
-                </div>
-                <ChevronRight className="w-4 h-4 text-ink-subtle transition-transform group-open:rotate-90" />
-              </summary>
-              <ul className="divide-y divide-surface-border bg-surface-muted/30">
-                {g.items.map((r) => (
-                  <li key={r.id} className="flex items-center gap-3 pl-16 pr-4 sm:pr-5 py-2.5 hover:bg-surface-muted/60 transition-colors">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs text-ink-muted flex items-center gap-2">
-                        <span className="inline-flex items-center gap-1 text-ink">
-                          <BookOpen className="w-3 h-3" />{r.subjectName}
-                        </span>
-                        <span className="text-ink-subtle">·</span>
-                        <span className="inline-flex items-center gap-1">
-                          <GraduationCap className="w-3 h-3" />{r.className}
-                        </span>
-                      </p>
-                    </div>
-                    <RemoveAssignmentButton assignmentId={r.id} />
-                  </li>
-                ))}
-              </ul>
-            </details>
-          ))}
+          {groupedByTeacher.map((g) => {
+            const open = isOpen(g.teacherId)
+            return (
+              <div key={g.teacherId}>
+                <button
+                  type="button"
+                  onClick={() => toggle(g.teacherId)}
+                  aria-expanded={open}
+                  className="w-full flex items-center gap-3 px-4 sm:px-5 py-3.5 hover:bg-surface-muted/60 transition-colors cursor-pointer text-left"
+                >
+                  <span className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-brand-accent/10 text-brand-accent flex-shrink-0">
+                    <User className="w-4 h-4" />
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-ink truncate">{g.teacherName}</p>
+                    <p className="text-xs text-ink-muted mt-0.5">
+                      {g.items.length} assignment{g.items.length === 1 ? '' : 's'}
+                    </p>
+                  </div>
+                  <ChevronRight className={'w-4 h-4 text-ink-subtle transition-transform ' + (open ? 'rotate-90' : '')} />
+                </button>
+                {open && (
+                  <ul className="divide-y divide-surface-border bg-surface-muted/30">
+                    {g.items.map((r) => (
+                      <li key={r.id} className="flex items-center gap-3 pl-16 pr-4 sm:pr-5 py-2.5 hover:bg-surface-muted/60 transition-colors">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs text-ink-muted flex items-center gap-2">
+                            <span className="inline-flex items-center gap-1 text-ink">
+                              <BookOpen className="w-3 h-3" />{r.subjectName}
+                            </span>
+                            <span className="text-ink-subtle">·</span>
+                            <span className="inline-flex items-center gap-1">
+                              <GraduationCap className="w-3 h-3" />{r.className}
+                            </span>
+                          </p>
+                        </div>
+                        <RemoveAssignmentButton assignmentId={r.id} />
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
     </div>

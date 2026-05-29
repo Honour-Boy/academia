@@ -15,10 +15,13 @@ import {
   suggestSubjects,
   type ResolvedRow,
 } from './roster-parser'
+import { validateStudentNumber } from '@/lib/student-number-validation'
 
 interface Props {
   classes: (Class & { classTeacherName: string | null })[]
   subjects: Subject[]
+  /** Current academic year (YYYY/YYYY). Used to validate student-number prefix. */
+  academicYear: string
 }
 
 type InputMode = 'paste' | 'upload'
@@ -28,7 +31,7 @@ type InputMode = 'paste' | 'upload'
 // CHUNK=8 made a 5-student paste look like 0/5 → 5/5 with no intermediate.
 const CHUNK = 1
 
-export default function RosterImport({ classes, subjects }: Props) {
+export default function RosterImport({ classes, subjects, academicYear }: Props) {
   const router = useRouter()
   const [mode, setMode] = useState<InputMode>('paste')
   const [text, setText] = useState('')
@@ -184,9 +187,18 @@ export default function RosterImport({ classes, subjects }: Props) {
 
       setResults({ enrolled: totalEnrolled, failed: allFailed })
       if (allFailed.length === 0) {
-        toast.success(`Enrolled ${totalEnrolled} student${totalEnrolled === 1 ? '' : 's'}`)
+        toast.success(`Enrolled ${totalEnrolled} student${totalEnrolled === 1 ? '' : 's'} — form reset.`)
+        // Full success → wipe the textarea + preview so the admin can paste a
+        // fresh batch immediately. The results card stays briefly to confirm.
+        setText('')
+        setPreviewed(null)
+        setUploadName(null)
       } else if (totalEnrolled > 0) {
         toast.warning(`Enrolled ${totalEnrolled}, ${allFailed.length} failed — see list below`)
+        // Partial success → drop the rows that landed; keep failed rows in the
+        // preview so the admin can fix them and resubmit. Match by fullName.
+        const failedNameSet = new Set(allFailed.map((f) => f.fullName))
+        setPreviewed((prev) => (prev ?? []).filter((r) => failedNameSet.has(r.fullName)))
       } else {
         toast.error(`None of the ${allFailed.length} rows could be enrolled — see list below`)
       }
@@ -322,7 +334,12 @@ export default function RosterImport({ classes, subjects }: Props) {
               const failed = failedNames.has(row.fullName)
               const reason = results?.failed.find((f) => f.fullName === row.fullName)?.reason
               const skipReason = rowSkipReason(row)
-              const willSkip = !!skipReason
+              // Year-prefix check — only meaningful once class is resolved.
+              const cls = row.classId ? classes.find((c) => c.id === row.classId) : null
+              const yearCheck = cls
+                ? validateStudentNumber(row.studentNumber, cls.level, academicYear)
+                : { valid: true, reason: null as string | null, expectedYear: null, foundYear: null }
+              const willSkip = !!skipReason || !yearCheck.valid
               return (
                 <li
                   key={idx}
@@ -383,7 +400,7 @@ export default function RosterImport({ classes, subjects }: Props) {
                     {willSkip && !failed && (
                       <p className="mt-1.5 text-[11px] text-brand-secondary-dark inline-flex items-start gap-1">
                         <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                        <span><span className="font-semibold">Skipped:</span> {skipReason}</span>
+                        <span><span className="font-semibold">Skipped:</span> {skipReason ?? yearCheck.reason}</span>
                       </p>
                     )}
                   </div>

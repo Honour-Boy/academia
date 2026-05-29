@@ -31,6 +31,7 @@ export default async function TeachersPage() {
       .select('id, full_name, email, role, is_active, created_at')
       .in('role', ['TEACHER', 'ADMIN'])
       .eq('status', 'approved')
+      .is('deleted_at', null)
       .order('full_name'),
     supabase
       .from('teacher_assignments')

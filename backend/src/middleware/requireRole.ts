@@ -25,7 +25,7 @@ export function requireRole(allowed: AllowedRole[]) {
 
     const { data, error } = await adminClient
       .from('profiles')
-      .select('role, is_active, status')
+      .select('role, is_active, status, deleted_at')
       .eq('id', req.user.id)
       .single()
 
@@ -33,12 +33,15 @@ export function requireRole(allowed: AllowedRole[]) {
     // handle_new_user trigger, so the is_active check below would already
     // reject them. We also explicitly require status='approved' so a row
     // whose is_active was toggled directly in the DB (without going through
-    // the approval flow) can't pivot to API access.
+    // the approval flow) can't pivot to API access. Soft-deleted profiles
+    // (deleted_at) are likewise rejected so a stale token can't outlive the
+    // delete action.
     if (
       error
       || !data
       || !data.is_active
       || data.status !== 'approved'
+      || data.deleted_at
     ) {
       res.status(403).send()
       return
