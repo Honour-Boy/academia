@@ -20,6 +20,7 @@ import {
   ShieldCheck,
   ChevronRight,
   Settings,
+  Loader2,
 } from 'lucide-react'
 import { Sheet, SheetContent, SheetTitle, SheetClose } from '@/components/ui/Sheet'
 
@@ -41,8 +42,11 @@ export default function AdminShell({ children, profile, pendingCount, schoolName
   const pathname = usePathname()
   const router = useRouter()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [signingOut, setSigningOut] = useState(false)
 
   async function signOut() {
+    if (signingOut) return
+    setSigningOut(true)
     const supabase = createClient()
     await supabase.auth.signOut()
     router.push('/login')
@@ -135,10 +139,11 @@ export default function AdminShell({ children, profile, pendingCount, schoolName
             <button
               type="button"
               onClick={signOut}
+              disabled={signingOut}
               aria-label="Sign out"
-              className="inline-flex items-center justify-center w-10 h-10 rounded-lg text-ink-muted hover:text-brand-primary hover:bg-brand-primary-light cursor-pointer transition-colors"
+              className="inline-flex items-center justify-center w-10 h-10 rounded-lg text-ink-muted hover:text-brand-primary hover:bg-brand-primary-light cursor-pointer transition-colors disabled:opacity-60 disabled:cursor-wait"
             >
-              <LogOut className="w-4 h-4" />
+              {signingOut ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogOut className="w-4 h-4" />}
             </button>
           </div>
         </header>

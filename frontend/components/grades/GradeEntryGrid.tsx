@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { CheckCircle2, Loader2, AlertCircle, Keyboard, Sparkles, X } from 'lucide-react'
+import { CheckCircle2, Loader2, AlertCircle, Keyboard, Sparkles, X, Search as SearchIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   validateScore,
@@ -87,6 +87,22 @@ export default function GradeEntryGrid({
   const totalRows = computedRows.length
   const completionPct = totalRows > 0 ? Math.round((completedRows / totalRows) * 100) : 0
   const allDone = totalRows > 0 && completedRows === totalRows
+
+  // Search filter — scoped to students in THIS class+subject roster. Empty
+  // query shows everything; matches case + diacritic insensitive against
+  // full_name and student_number.
+  const [query, setQuery] = useState('')
+  const normalizedQuery = query.trim().toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
+  const visibleRows = useMemo(() => {
+    if (!normalizedQuery) return computedRows
+    return computedRows.filter((r) => {
+      const name = r.student.full_name.toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
+      if (name.includes(normalizedQuery)) return true
+      const num = (r.student.student_number ?? '').toLowerCase()
+      if (num.includes(normalizedQuery)) return true
+      return false
+    })
+  }, [computedRows, normalizedQuery])
 
   useEffect(() => {
     if (allDone && !celebrated) {
@@ -247,8 +263,38 @@ export default function GradeEntryGrid({
         </button>
       </div>
 
+      {/* Search — scoped to students in this class+subject roster */}
+      <div className="px-4 sm:px-6 pt-3">
+        <div className="relative">
+          <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-subtle pointer-events-none" />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={`Search ${totalRows} student${totalRows === 1 ? '' : 's'} by name or #…`}
+            className="input pl-9 pr-9"
+            aria-label="Search students in this class"
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery('')}
+              aria-label="Clear search"
+              className="absolute right-3 top-1/2 -translate-y-1/2 inline-flex items-center justify-center w-5 h-5 rounded text-ink-subtle hover:text-ink cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+        {query && visibleRows.length !== totalRows && (
+          <p className="text-[11px] text-ink-subtle mt-1.5">
+            {visibleRows.length} of {totalRows} match &ldquo;{query}&rdquo;
+          </p>
+        )}
+      </div>
+
       <div className="px-4 sm:px-6 py-4 space-y-3">
-        {computedRows.map((row, rowIdx) => {
+        {visibleRows.map((row, rowIdx) => {
           const filled = components.filter((c) => row.scores[c.id] !== null).length
           const pct = (filled / components.length) * 100
 
@@ -368,6 +414,18 @@ export default function GradeEntryGrid({
 
         {computedRows.length === 0 && (
           <p className="text-center text-ink-muted text-sm py-10">No students enrolled in this subject yet.</p>
+        )}
+        {computedRows.length > 0 && visibleRows.length === 0 && (
+          <div className="text-center py-10">
+            <p className="text-sm font-medium text-ink">No students match &ldquo;{query}&rdquo;</p>
+            <button
+              type="button"
+              onClick={() => setQuery('')}
+              className="text-xs text-brand-primary hover:text-brand-primary-dark cursor-pointer mt-1"
+            >
+              Clear search
+            </button>
+          </div>
         )}
       </div>
 

@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { User, Mail, KeyRound, ShieldCheck, Monitor, ChevronLeft, BookOpen } from 'lucide-react'
-import { createAdminClient, createClient } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
 import { IdentityForm, PasswordForm } from './ProfileForms'
 import SessionsCard, { type SessionRow } from './SessionsCard'
 import SubjectChangeRequestForm from './SubjectChangeRequestForm'
@@ -42,20 +42,20 @@ export default async function ProfilePage() {
     redirect('/login')
   }
 
-  // Active sessions — auth.sessions is under the auth schema, which user-RLS
-  // doesn't reach. Service-role client bypasses; we still scope by user_id so
-  // each admin only sees their own sessions, never anyone else's.
+  // Active sessions — `auth.sessions` is under the `auth` schema, which
+  // PostgREST does NOT expose. The user-scoped client and the service-role
+  // admin client both silently return [] when you `.schema('auth').from(...)`.
+  // Use the SECURITY DEFINER RPC `get_my_sessions` (migration 009) instead,
+  // which scopes to auth.uid() internally so it can only return the caller's
+  // own rows.
   const { data: sessionData } = await supabase.auth.getSession()
   const currentSessionId = decodeSessionId(sessionData?.session?.access_token)
-  const admin = createAdminClient()
-  const { data: rawSessions } = await admin
-    .schema('auth' as never)
-    .from('sessions')
-    .select('id, created_at, refreshed_at, user_agent, ip')
-    .eq('user_id', user.id)
-    .order('refreshed_at', { ascending: false, nullsFirst: false })
+  const { data: rawSessions } = await supabase.rpc('get_my_sessions')
 
-  const sessions: SessionRow[] = (rawSessions ?? []).map((s: any) => ({
+  const sessions: SessionRow[] = (rawSessions ?? []).map((s: {
+    id: string; created_at: string; refreshed_at: string | null;
+    user_agent: string | null; ip: string | null
+  }) => ({
     id: s.id,
     createdAt: s.created_at,
     refreshedAt: s.refreshed_at,
