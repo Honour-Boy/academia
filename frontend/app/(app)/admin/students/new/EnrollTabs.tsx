@@ -41,7 +41,7 @@ export default function EnrollTabs({ classes, subjects, defaultTerm, defaultYear
         />
       </div>
       <div className={tab === 'bulk' ? '' : 'hidden'} aria-hidden={tab !== 'bulk'}>
-        <RosterImport classes={classes} subjects={subjects} />
+        <RosterImport classes={classes} subjects={subjects} academicYear={defaultYear} />
       </div>
     </div>
   )

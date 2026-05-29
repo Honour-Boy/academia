@@ -8,6 +8,7 @@ import {
 import SearchInput from '@/components/ui/SearchInput'
 import { cn } from '@/lib/cn'
 import DeactivateTeacherButton from './DeactivateTeacherButton'
+import DeleteTeacherButton from './DeleteTeacherButton'
 
 export interface TeacherRow {
   id: string
@@ -286,7 +287,7 @@ function TeacherRow({
           )}
         </div>
 
-        <div className="flex-shrink-0">
+        <div className="flex-shrink-0 flex items-center gap-2">
           <DeactivateTeacherButton
             teacherId={t.id}
             teacherName={t.full_name}
@@ -295,6 +296,17 @@ function TeacherRow({
             isSelf={t.id === currentUserId}
             soleActiveAdmin={isAdmin && t.is_active && activeAdminCount <= 1}
           />
+          {/* Delete only surfaces on deactivated rows — keeps the active list
+              clean. To delete an active teacher, deactivate first, then delete. */}
+          {!t.is_active && (
+            <DeleteTeacherButton
+              teacherId={t.id}
+              teacherName={t.full_name}
+              isAdmin={isAdmin}
+              isSelf={t.id === currentUserId}
+              soleActiveAdmin={isAdmin && activeAdminCount <= 1}
+            />
+          )}
         </div>
       </div>
     </div>

@@ -27,7 +27,7 @@ export default async function AssignmentsAdminPage() {
     { data: assignments },
     { data: staffSubjectRequests },
   ] = await Promise.all([
-    supabase.from('profiles').select('id, full_name').eq('role', 'TEACHER').eq('is_active', true).order('full_name'),
+    supabase.from('profiles').select('id, full_name').eq('role', 'TEACHER').eq('is_active', true).is('deleted_at', null).order('full_name'),
     supabase.from('classes').select('id, name').order('name'),
     supabase.from('subjects').select('id, name').order('name'),
     supabase

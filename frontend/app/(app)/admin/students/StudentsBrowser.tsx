@@ -7,6 +7,7 @@ import {
   GraduationCap, ChevronRight, User,
 } from 'lucide-react'
 import SearchInput from '@/components/ui/SearchInput'
+import ExpandCollapseToggle from '@/components/ui/ExpandCollapseToggle'
 import { setStudentActiveAction } from './actions'
 
 interface Student {
@@ -34,6 +35,12 @@ function normalize(s: string) {
 
 export default function StudentsBrowser({ rows }: Props) {
   const [query, setQuery] = useState('')
+  // Default every class group open — matches the prior `<details open>` UX.
+  const [openMap, setOpenMap] = useState<Record<string, boolean>>(() => {
+    const init: Record<string, boolean> = {}
+    for (const r of rows) if (r.classId) init[r.classId] = true
+    return init
+  })
 
   const filtered = useMemo(() => {
     const q = normalize(query.trim())
@@ -74,14 +81,49 @@ export default function StudentsBrowser({ rows }: Props) {
     return { groups, noClassBucket }
   }, [active])
 
+  const classKeys = activeByClass.groups.map((g) => g.classId)
+  const isOpen = (classId: string) => !!query || !!openMap[classId]
+  const allOpen = classKeys.length > 0 && classKeys.every(isOpen)
+  const anyOpen = classKeys.some(isOpen)
+  function expandAll() {
+    setOpenMap((m) => {
+      const n = { ...m }
+      for (const k of classKeys) n[k] = true
+      return n
+    })
+  }
+  function collapseAll() {
+    setOpenMap((m) => {
+      const n = { ...m }
+      for (const k of classKeys) n[k] = false
+      return n
+    })
+  }
+  function toggle(classId: string) {
+    setOpenMap((m) => ({ ...m, [classId]: !isOpen(classId) }))
+  }
+
   return (
     <div className="space-y-5">
-      <SearchInput
-        value={query}
-        onChange={setQuery}
-        placeholder="Search by name, ID, class, class teacher, or subject…"
-        aria-label="Search students"
-      />
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex-1 min-w-[240px]">
+          <SearchInput
+            value={query}
+            onChange={setQuery}
+            placeholder="Search by name, ID, class, class teacher, or subject…"
+            aria-label="Search students"
+          />
+        </div>
+        {activeByClass.groups.length > 0 && (
+          <ExpandCollapseToggle
+            allOpen={allOpen}
+            anyOpen={anyOpen}
+            onExpandAll={expandAll}
+            onCollapseAll={collapseAll}
+            noun="classes"
+          />
+        )}
+      </div>
 
       {filtered.length === 0 ? (
         <div className="rounded-xl border border-dashed border-surface-border bg-surface-muted/60 px-6 py-10 text-center">
@@ -97,7 +139,12 @@ export default function StudentsBrowser({ rows }: Props) {
                 Active &middot; {active.length} across {activeByClass.groups.length} class{activeByClass.groups.length === 1 ? '' : 'es'}
               </h3>
               {activeByClass.groups.map((g) => (
-                <ClassGroup key={g.classId} group={g} />
+                <ClassGroup
+                  key={g.classId}
+                  group={g}
+                  open={isOpen(g.classId)}
+                  onToggle={() => toggle(g.classId)}
+                />
               ))}
             </section>
           )}
@@ -116,14 +163,21 @@ export default function StudentsBrowser({ rows }: Props) {
 }
 
 function ClassGroup({
-  group,
+  group, open, onToggle,
 }: {
   group: { classId: string; className: string; students: Student[] }
+  open: boolean
+  onToggle: () => void
 }) {
   const classTeacher = group.students.find((s) => s.classTeacher)?.classTeacher ?? null
   return (
-    <details open className="card overflow-hidden">
-      <summary className="cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden flex items-center gap-3 px-4 sm:px-5 py-3 bg-surface-muted border-b border-surface-border">
+    <div className="card overflow-hidden">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="w-full flex items-center gap-3 px-4 sm:px-5 py-3 bg-surface-muted border-b border-surface-border cursor-pointer text-left hover:bg-surface-muted/80 transition-colors"
+      >
         <span className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-brand-accent/10 text-brand-accent flex-shrink-0">
           <GraduationCap className="w-4 h-4" />
         </span>
@@ -141,14 +195,16 @@ function ClassGroup({
             )}
           </p>
         </div>
-        <ChevronRight className="w-4 h-4 text-ink-subtle transition-transform [details[open]_&]:rotate-90 hidden sm:inline-flex" />
-      </summary>
-      <ul className="divide-y divide-surface-border">
-        {group.students.map((s) => (
-          <StudentItem key={s.id} student={s} />
-        ))}
-      </ul>
-    </details>
+        <ChevronRight className={'w-4 h-4 text-ink-subtle transition-transform ' + (open ? 'rotate-90' : '')} />
+      </button>
+      {open && (
+        <ul className="divide-y divide-surface-border">
+          {group.students.map((s) => (
+            <StudentItem key={s.id} student={s} />
+          ))}
+        </ul>
+      )}
+    </div>
   )
 }
 

@@ -1,11 +1,12 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { Settings, Info, History, ChevronRight, UserCircle } from 'lucide-react'
+import { Settings, Info, History, ChevronRight } from 'lucide-react'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import type { Term } from '@/lib/grade-utils'
 import { listYearArchives } from '@/lib/year-archives'
 import SettingsForm from './SettingsForm'
+import GoToProfileCard from './GoToProfileCard'
 
 export const metadata: Metadata = { title: 'Admin · Settings' }
 
@@ -57,21 +58,7 @@ export default async function AdminSettingsPage() {
         </div>
       </div>
 
-      <Link
-        href="/profile"
-        className="card p-5 sm:p-6 flex items-center gap-4 group hover:border-brand-primary/40 hover:shadow-md transition-all cursor-pointer"
-      >
-        <span className="inline-flex items-center justify-center w-11 h-11 rounded-xl bg-brand-primary-light text-brand-primary-dark flex-shrink-0">
-          <UserCircle className="w-5 h-5" />
-        </span>
-        <div className="flex-1 min-w-0">
-          <h3 className="text-base font-semibold text-ink group-hover:text-brand-primary transition-colors">My profile</h3>
-          <p className="text-xs text-ink-muted mt-0.5">
-            Edit your name, phone number, or password.
-          </p>
-        </div>
-        <ChevronRight className="w-4 h-4 text-ink-subtle group-hover:text-brand-primary transition-colors flex-shrink-0" />
-      </Link>
+      <GoToProfileCard />
 
       <div className="card p-5 sm:p-6 space-y-5">
         <div>

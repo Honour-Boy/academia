@@ -251,10 +251,15 @@ export function rowHasError(r: ResolvedRow): boolean {
 }
 
 export function rowIsSubmittable(r: ResolvedRow): boolean {
-  // Allow rows with partial subject matches as long as at least one matched and
-  // there's a class. Unmatched subjects are warnings, not blockers — the admin
-  // can drop the row from the preview if they want strict matching.
-  return !r.parseError && !!r.classId && r.subjectIds.length > 0
+  // Strict matching: block the row if any subject didn't resolve to a
+  // catalogue entry. Silently discarding unmatched subjects was masking
+  // mistakes the admin couldn't see in /admin/students afterwards.
+  return (
+    !r.parseError
+    && !!r.classId
+    && r.subjectIds.length > 0
+    && r.unmatchedSubjects.length === 0
+  )
 }
 
 /**
@@ -276,6 +281,10 @@ export function rowSkipReason(r: ResolvedRow): string | null {
   } else if (r.subjectIds.length === 0) {
     reasons.push(
       `none of the subjects matched the catalogue (${r.subjectsRaw.join(', ')})`,
+    )
+  } else if (r.unmatchedSubjects.length > 0) {
+    reasons.push(
+      `subject${r.unmatchedSubjects.length === 1 ? '' : 's'} not in catalogue: ${r.unmatchedSubjects.join(', ')}`,
     )
   }
   return reasons.join('; ') || 'row is incomplete'

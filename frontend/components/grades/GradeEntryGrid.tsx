@@ -587,11 +587,11 @@ function ScoreCell({
         id={cellId}
         ref={registerRef}
         type="number"
-        inputMode="decimal"
+        inputMode="numeric"
         enterKeyHint="next"
         min={0}
         max={maxScore}
-        step="0.01"
+        step="1"
         value={value}
         placeholder="—"
         onChange={(e) => onChange(e.target.value)}
