@@ -69,19 +69,53 @@ export async function createTeacherAction(formData: FormData) {
   redirect('/admin/teachers')
 }
 
-export async function toggleTeacherStatusAction(teacherId: string, newStatus: boolean) {
+export async function toggleTeacherStatusAction(
+  teacherId: string,
+  newStatus: boolean,
+): Promise<{ success?: true; error?: string }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return
+  if (!user) return { error: 'Not authenticated.' }
 
-  const { data: profile } = await supabase
+  const admin = createAdminClient()
+  const { data: callerProfile } = await admin
     .from('profiles').select('role').eq('id', user.id).single()
-  if (profile?.role !== 'ADMIN') return
+  if (callerProfile?.role !== 'ADMIN') return { error: 'Forbidden.' }
 
-  await supabase
+  // Safety rails on deactivation only — reactivating is always allowed for any
+  // staff member the admin can see.
+  if (!newStatus) {
+    const { data: target } = await admin
+      .from('profiles').select('id, role, is_active').eq('id', teacherId).single()
+    if (!target) return { error: 'Account not found.' }
+
+    if (target.role === 'ADMIN') {
+      // Block admins from deactivating other admins outright — they'd have to
+      // ask that admin to step down themselves.
+      if (target.id !== user.id) {
+        return { error: 'Admins cannot deactivate another admin\'s account. Ask them to deactivate their own.' }
+      }
+      // Block self-deactivation if this would leave zero active admins.
+      const { count: activeAdmins } = await admin
+        .from('profiles')
+        .select('id', { count: 'exact', head: true })
+        .eq('role', 'ADMIN')
+        .eq('is_active', true)
+      if ((activeAdmins ?? 0) <= 1) {
+        return {
+          error: 'You are the only active administrator. Promote another admin first — otherwise no one can reactivate you.',
+        }
+      }
+    }
+  }
+
+  const { error } = await admin
     .from('profiles')
     .update({ is_active: newStatus })
     .eq('id', teacherId)
 
+  if (error) return { error: 'Failed to update account status.' }
+
   revalidatePath('/admin/teachers')
+  return { success: true }
 }

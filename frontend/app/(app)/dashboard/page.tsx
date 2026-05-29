@@ -6,7 +6,8 @@ import ClassTeacherCard from '@/components/dashboard/ClassTeacherCard'
 import StatCard from '@/components/ui/StatCard'
 import EmptyState from '@/components/ui/EmptyState'
 import { getSchoolSettings } from '@/lib/school-settings'
-import { BookOpen, Users, Activity, Sparkles } from 'lucide-react'
+import Link from 'next/link'
+import { BookOpen, Users, Activity, Sparkles, UserCircle, ChevronRight } from 'lucide-react'
 
 export const metadata: Metadata = { title: 'Dashboard' }
 
@@ -54,17 +55,19 @@ export default async function DashboardPage() {
       const classId = a.classes?.id
       const subjectId = a.subjects?.id
 
-      const [{ count: totalStudents }, { data: gradeRows }] = await Promise.all([
+      // Restrict the denominator to students in this class who are actually
+      // enrolled in THIS subject (student_subjects). Counting the whole class
+      // inflates the total when only some students offer the subject — a
+      // teacher with 4 computer kids in a 7-student class was seeing 4/7
+      // instead of 4/4. Fall back to "all active students in the class" when
+      // no enrolment rows exist for the class so legacy admins who skipped
+      // subject pick at enrol time still get a sensible denominator.
+      const [{ data: classStudents }, { data: gradeRows }] = await Promise.all([
         supabase
           .from('students')
-          .select('id', { count: 'exact', head: true })
+          .select('id')
           .eq('class_id', classId)
           .eq('is_active', true),
-        // Pull all (non-null) grade rows so we can count unique students
-        // who have a FILLED row for every component. Previously this used a
-        // count of grade rows directly — for 3 components per student, a
-        // 5-student class with full grades reported 15 in a 8-student
-        // denominator, hence "15/8 = 188%".
         supabase
           .from('grades')
           .select('student_id, component_id')
@@ -75,8 +78,28 @@ export default async function DashboardPage() {
           .not('score', 'is', null),
       ])
 
+      const classStudentIds = (classStudents ?? []).map((s: { id: string }) => s.id)
+      let enrolledIds: string[] = classStudentIds
+      if (classStudentIds.length > 0) {
+        const { data: enrollments } = await supabase
+          .from('student_subjects')
+          .select('student_id')
+          .eq('subject_id', subjectId)
+          .in('student_id', classStudentIds)
+        const enrolled = (enrollments ?? []).map((e: { student_id: string }) => e.student_id)
+        if (enrolled.length > 0) enrolledIds = enrolled
+      }
+      const enrolledSet = new Set(enrolledIds)
+      const totalStudents = enrolledIds.length
+
+      // Only count grade rows for students who actually offer the subject; a
+      // stale grade row for a student who dropped the subject shouldn't bump
+      // the numerator.
       const byStudent = new Map<string, Set<string>>()
+      let filledSlots = 0
       for (const g of (gradeRows ?? []) as { student_id: string; component_id: string }[]) {
+        if (!enrolledSet.has(g.student_id)) continue
+        filledSlots += 1
         const set = byStudent.get(g.student_id) ?? new Set<string>()
         set.add(g.component_id)
         byStudent.set(g.student_id, set)
@@ -88,9 +111,9 @@ export default async function DashboardPage() {
 
       return {
         ...a,
-        totalStudents: totalStudents ?? 0,
+        totalStudents,
         gradedStudents,
-        filledSlots: (gradeRows ?? []).length,
+        filledSlots,
       }
     }),
   )
@@ -123,6 +146,16 @@ export default async function DashboardPage() {
               ? 'Pick up where you left off. Tap any class to record scores, attendance, or remarks.'
               : 'You’ll see your classes and subjects here once an admin assigns you.'}
           </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Link
+              href="/profile"
+              className="inline-flex items-center gap-1.5 px-3 h-9 rounded-lg text-xs sm:text-sm font-semibold bg-white/15 text-white hover:bg-white/25 backdrop-blur-sm ring-1 ring-white/20 cursor-pointer transition-colors"
+            >
+              <UserCircle className="w-4 h-4" />
+              <span>Go to profile</span>
+              <ChevronRight className="w-3.5 h-3.5 opacity-70" />
+            </Link>
+          </div>
         </div>
       </section>
 

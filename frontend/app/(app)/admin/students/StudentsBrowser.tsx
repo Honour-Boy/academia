@@ -4,10 +4,9 @@ import { useMemo, useState, useTransition } from 'react'
 import Link from 'next/link'
 import {
   Pencil, UserCheck, UserX, Search as SearchIcon,
-  GraduationCap, ChevronRight,
+  GraduationCap, ChevronRight, User,
 } from 'lucide-react'
 import SearchInput from '@/components/ui/SearchInput'
-import DownloadClassZipButton from '../reports/DownloadClassZipButton'
 import { setStudentActiveAction } from './actions'
 
 interface Student {
@@ -17,12 +16,12 @@ interface Student {
   is_active: boolean
   classId: string | null
   className: string | null
+  classTeacher: string | null
+  subjects: string[]
 }
 
 interface Props {
   rows: Student[]
-  term: string
-  year: string
 }
 
 function initials(name: string) {
@@ -33,17 +32,20 @@ function normalize(s: string) {
   return s.toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
 }
 
-export default function StudentsBrowser({ rows, term, year }: Props) {
+export default function StudentsBrowser({ rows }: Props) {
   const [query, setQuery] = useState('')
 
   const filtered = useMemo(() => {
     const q = normalize(query.trim())
     if (!q) return rows
-    return rows.filter((s) =>
-      normalize(s.full_name).includes(q)
-      || (s.student_number && normalize(s.student_number).includes(q))
-      || (s.className && normalize(s.className).includes(q)),
-    )
+    return rows.filter((s) => {
+      if (normalize(s.full_name).includes(q)) return true
+      if (s.student_number && normalize(s.student_number).includes(q)) return true
+      if (s.className && normalize(s.className).includes(q)) return true
+      if (s.classTeacher && normalize(s.classTeacher).includes(q)) return true
+      for (const subj of s.subjects) if (normalize(subj).includes(q)) return true
+      return false
+    })
   }, [rows, query])
 
   const active = filtered.filter((s) => s.is_active)
@@ -77,7 +79,7 @@ export default function StudentsBrowser({ rows, term, year }: Props) {
       <SearchInput
         value={query}
         onChange={setQuery}
-        placeholder="Search by name, student #, or class…"
+        placeholder="Search by name, ID, class, class teacher, or subject…"
         aria-label="Search students"
       />
 
@@ -95,7 +97,7 @@ export default function StudentsBrowser({ rows, term, year }: Props) {
                 Active &middot; {active.length} across {activeByClass.groups.length} class{activeByClass.groups.length === 1 ? '' : 'es'}
               </h3>
               {activeByClass.groups.map((g) => (
-                <ClassGroup key={g.classId} group={g} term={term} year={year} />
+                <ClassGroup key={g.classId} group={g} />
               ))}
             </section>
           )}
@@ -114,12 +116,11 @@ export default function StudentsBrowser({ rows, term, year }: Props) {
 }
 
 function ClassGroup({
-  group, term, year,
+  group,
 }: {
   group: { classId: string; className: string; students: Student[] }
-  term: string
-  year: string
 }) {
+  const classTeacher = group.students.find((s) => s.classTeacher)?.classTeacher ?? null
   return (
     <details open className="card overflow-hidden">
       <summary className="cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden flex items-center gap-3 px-4 sm:px-5 py-3 bg-surface-muted border-b border-surface-border">
@@ -128,14 +129,18 @@ function ClassGroup({
         </span>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-ink font-mono">{group.className}</p>
-          <p className="text-[11px] text-ink-muted">{group.students.length} student{group.students.length === 1 ? '' : 's'}</p>
+          <p className="text-[11px] text-ink-muted">
+            {group.students.length} student{group.students.length === 1 ? '' : 's'}
+            {classTeacher && (
+              <>
+                <span className="text-ink-subtle"> · </span>
+                <span className="inline-flex items-center gap-0.5">
+                  <User className="w-3 h-3" /> {classTeacher}
+                </span>
+              </>
+            )}
+          </p>
         </div>
-        <DownloadClassZipButton
-          className={group.className}
-          studentIds={group.students.map((s) => s.id)}
-          term={term}
-          year={year}
-        />
         <ChevronRight className="w-4 h-4 text-ink-subtle transition-transform [details[open]_&]:rotate-90 hidden sm:inline-flex" />
       </summary>
       <ul className="divide-y divide-surface-border">

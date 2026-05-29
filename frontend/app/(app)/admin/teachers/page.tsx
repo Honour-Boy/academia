@@ -81,6 +81,10 @@ export default async function TeachersPage() {
     registeredByTeacher.set(profileId, list)
   }
 
+  // Count active admins so the button can disable self-deactivation when this
+  // admin is the only one. Server-side action also enforces this.
+  const activeAdminCount = (teachers ?? []).filter((t) => t.role === 'ADMIN' && t.is_active).length
+
   const rows: TeacherRow[] = (teachers ?? []).map((t) => {
     const pairs = subjectPairsByTeacher.get(t.id) ?? []
     // Group classes by subject so "Maths: JSS 1A, JSS 1B" reads naturally.
@@ -132,7 +136,11 @@ export default async function TeachersPage() {
           primaryAction={{ label: 'Add a teacher', href: '/admin/teachers/new' }}
         />
       ) : (
-        <TeachersBrowser rows={rows} />
+        <TeachersBrowser
+          rows={rows}
+          currentUserId={user.id}
+          activeAdminCount={activeAdminCount}
+        />
       )}
     </div>
   )

@@ -25,6 +25,8 @@ export interface TeacherRow {
 
 interface Props {
   rows: TeacherRow[]
+  currentUserId: string
+  activeAdminCount: number
 }
 
 function initials(name: string) {
@@ -35,7 +37,7 @@ function normalize(s: string) {
   return s.toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
 }
 
-export default function TeachersBrowser({ rows }: Props) {
+export default function TeachersBrowser({ rows, currentUserId, activeAdminCount }: Props) {
   const [query, setQuery] = useState('')
 
   const filtered = useMemo(() => {
@@ -72,8 +74,21 @@ export default function TeachersBrowser({ rows }: Props) {
         </div>
       ) : (
         <>
-          <TeacherList title="Active" rows={active} />
-          {inactive.length > 0 && <TeacherList title="Deactivated" rows={inactive} muted />}
+          <TeacherList
+            title="Active"
+            rows={active}
+            currentUserId={currentUserId}
+            activeAdminCount={activeAdminCount}
+          />
+          {inactive.length > 0 && (
+            <TeacherList
+              title="Deactivated"
+              rows={inactive}
+              muted
+              currentUserId={currentUserId}
+              activeAdminCount={activeAdminCount}
+            />
+          )}
         </>
       )}
     </div>
@@ -84,10 +99,14 @@ function TeacherList({
   title,
   rows,
   muted = false,
+  currentUserId,
+  activeAdminCount,
 }: {
   title: string
   rows: TeacherRow[]
   muted?: boolean
+  currentUserId: string
+  activeAdminCount: number
 }) {
   if (!rows.length) return null
   return (
@@ -97,14 +116,30 @@ function TeacherList({
       </h3>
       <div className="card divide-y divide-surface-border overflow-hidden">
         {rows.map((t) => (
-          <TeacherRow key={t.id} row={t} muted={muted} />
+          <TeacherRow
+            key={t.id}
+            row={t}
+            muted={muted}
+            currentUserId={currentUserId}
+            activeAdminCount={activeAdminCount}
+          />
         ))}
       </div>
     </section>
   )
 }
 
-function TeacherRow({ row: t, muted }: { row: TeacherRow; muted: boolean }) {
+function TeacherRow({
+  row: t,
+  muted,
+  currentUserId,
+  activeAdminCount,
+}: {
+  row: TeacherRow
+  muted: boolean
+  currentUserId: string
+  activeAdminCount: number
+}) {
   const [expanded, setExpanded] = useState(false)
   const isAdmin = t.role === 'ADMIN'
   const totalPairs = t.teaches.reduce((sum, x) => sum + x.classes.length, 0)
@@ -252,7 +287,14 @@ function TeacherRow({ row: t, muted }: { row: TeacherRow; muted: boolean }) {
         </div>
 
         <div className="flex-shrink-0">
-          <DeactivateTeacherButton teacherId={t.id} isActive={t.is_active} />
+          <DeactivateTeacherButton
+            teacherId={t.id}
+            teacherName={t.full_name}
+            isActive={t.is_active}
+            isAdmin={isAdmin}
+            isSelf={t.id === currentUserId}
+            soleActiveAdmin={isAdmin && t.is_active && activeAdminCount <= 1}
+          />
         </div>
       </div>
     </div>

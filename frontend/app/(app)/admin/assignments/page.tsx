@@ -1,12 +1,11 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
-import { Network, BookOpen, GraduationCap, User, Plus, ChevronDown, ChevronRight } from 'lucide-react'
+import { Network, Plus, ChevronDown } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { getSchoolSettings } from '@/lib/school-settings'
-import EmptyState from '@/components/ui/EmptyState'
 import AssignSubjectTeacherForm from './AssignSubjectTeacherForm'
-import RemoveAssignmentButton from './RemoveAssignmentButton'
 import AssignmentMatrix from './AssignmentMatrix'
+import AssignmentsBrowser, { type AssignmentRow } from './AssignmentsBrowser'
 
 export const metadata: Metadata = { title: 'Admin · Subject Assignments' }
 
@@ -63,24 +62,13 @@ export default async function AssignmentsAdminPage() {
     subject_id: a.subject_id as string,
   }))
 
-  const rows = (assignments ?? []).map((a: any) => ({
+  const rows: AssignmentRow[] = (assignments ?? []).map((a: any) => ({
     id: a.id as string,
     teacherId: a.teacher_id as string,
     teacherName: a.profiles?.full_name ?? '—',
     className: a.classes?.name ?? '—',
     subjectName: a.subjects?.name ?? '—',
   }))
-
-  // Group by teacher → one expandable row per teacher (item B in handoff backlog)
-  const groupedByTeacher = (() => {
-    const map = new Map<string, { teacherId: string; teacherName: string; items: typeof rows }>()
-    for (const r of rows) {
-      const g = map.get(r.teacherId)
-      if (g) g.items.push(r)
-      else map.set(r.teacherId, { teacherId: r.teacherId, teacherName: r.teacherName, items: [r] })
-    }
-    return Array.from(map.values()).sort((a, b) => a.teacherName.localeCompare(b.teacherName))
-  })()
 
   return (
     <div className="space-y-6">
@@ -134,61 +122,10 @@ export default async function AssignmentsAdminPage() {
       </details>
 
       <section>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-subtle">
-            Current assignments
-          </h3>
-          {rows.length > 0 && (
-            <span className="text-xs font-medium text-ink-muted">
-              {groupedByTeacher.length} teacher{groupedByTeacher.length === 1 ? '' : 's'} · {rows.length} assignment{rows.length === 1 ? '' : 's'}
-            </span>
-          )}
-        </div>
-
-        {rows.length === 0 ? (
-          <EmptyState
-            icon={Network}
-            title="Nothing assigned yet"
-            description="Use the matrix above to bulk-assign a teacher to multiple subject × class cells, then come back here for the per-row view."
-          />
-        ) : (
-          <div className="card divide-y divide-surface-border overflow-hidden">
-            {groupedByTeacher.map((g) => (
-              <details key={g.teacherId} className="group">
-                <summary className="cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden flex items-center gap-3 px-4 sm:px-5 py-3.5 hover:bg-surface-muted/60 transition-colors">
-                  <span className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-brand-accent/10 text-brand-accent flex-shrink-0">
-                    <User className="w-4 h-4" />
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-ink truncate">{g.teacherName}</p>
-                    <p className="text-xs text-ink-muted mt-0.5">
-                      {g.items.length} assignment{g.items.length === 1 ? '' : 's'}
-                    </p>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-ink-subtle transition-transform group-open:rotate-90" />
-                </summary>
-                <ul className="divide-y divide-surface-border bg-surface-muted/30">
-                  {g.items.map((r) => (
-                    <li key={r.id} className="flex items-center gap-3 pl-16 pr-4 sm:pr-5 py-2.5 hover:bg-surface-muted/60 transition-colors">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs text-ink-muted flex items-center gap-2">
-                          <span className="inline-flex items-center gap-1 text-ink">
-                            <BookOpen className="w-3 h-3" />{r.subjectName}
-                          </span>
-                          <span className="text-ink-subtle">·</span>
-                          <span className="inline-flex items-center gap-1">
-                            <GraduationCap className="w-3 h-3" />{r.className}
-                          </span>
-                        </p>
-                      </div>
-                      <RemoveAssignmentButton assignmentId={r.id} />
-                    </li>
-                  ))}
-                </ul>
-              </details>
-            ))}
-          </div>
-        )}
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-subtle mb-3">
+          Current assignments
+        </h3>
+        <AssignmentsBrowser rows={rows} />
       </section>
     </div>
   )
