@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { requireWritableYear } from '@/lib/school-settings'
 
 export async function upsertGradeAction(
   studentId: string,
@@ -15,6 +16,8 @@ export async function upsertGradeAction(
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated' }
+  const guard = await requireWritableYear()
+  if (guard) return guard
 
   if (score !== null) {
     // Validate component max score server-side
@@ -67,6 +70,8 @@ export async function bulkUpsertGradesAction(
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Not authenticated', saved: 0 }
+  const guard = await requireWritableYear()
+  if (guard) return { error: guard.error, saved: 0 }
 
   const rows = grades.map((g) => ({
     student_id:    g.studentId,

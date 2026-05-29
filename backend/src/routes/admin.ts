@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import archiver from 'archiver'
 import { z } from 'zod'
 import { requireAuth } from '../middleware/requireAuth'
 import { requireRole } from '../middleware/requireRole'
@@ -304,3 +305,158 @@ adminRouter.get('/audit', async (req, res) => {
 
   res.json(data)
 })
+
+// ─── Year archive export ──────────────────────────────────────────────────────
+
+/**
+ * GET /admin/year-archive/:year/export
+ * Streams a ZIP of CSVs containing every year-scoped record for the given
+ * academic_year — grades, teacher_assignments, class_teacher_assignments,
+ * student_remarks. Used as the "export before delete" safety net so an admin
+ * never loses past-year data when freeing storage.
+ *
+ * The :year param is URL-encoded ("2025%2F2026").
+ */
+adminRouter.get('/year-archive/:year/export', async (req, res) => {
+  const year = decodeURIComponent(req.params.year)
+  if (!year || !/^\d{4}\/\d{4}$/.test(year)) {
+    res.status(400).json({ error: 'Invalid academic_year' })
+    return
+  }
+
+  res.setHeader('Content-Type', 'application/zip')
+  res.setHeader(
+    'Content-Disposition',
+    `attachment; filename="year_archive_${slugify(year)}.zip"`,
+  )
+
+  const archive = archiver('zip', { zlib: { level: 6 } })
+  archive.on('error', (err) => {
+    console.error('[year-archive export] archiver error:', err)
+    res.end()
+  })
+  archive.pipe(res)
+
+  // ── grades.csv ───────────────────────────────────────────────────────────
+  const { data: gradeRows } = await adminClient
+    .from('grades')
+    .select(`
+      score, term, academic_year, entered_by,
+      students!student_id ( full_name, student_number, classes!class_id ( name ) ),
+      subjects!subject_id ( name ),
+      score_components!component_id ( name )
+    `)
+    .eq('academic_year', year)
+
+  archive.append(
+    toCsv(
+      ['Class', 'Student', 'Student #', 'Subject', 'Component', 'Score', 'Term', 'Academic Year'],
+      (gradeRows ?? []).map((g: any) => [
+        g.students?.classes?.name ?? '',
+        g.students?.full_name ?? '',
+        g.students?.student_number ?? '',
+        g.subjects?.name ?? '',
+        g.score_components?.name ?? '',
+        g.score == null ? '' : String(g.score),
+        g.term,
+        g.academic_year,
+      ]),
+    ),
+    { name: 'grades.csv' },
+  )
+
+  // ── teacher_assignments.csv ─────────────────────────────────────────────
+  const { data: subjectAssignments } = await adminClient
+    .from('teacher_assignments')
+    .select(`
+      term, academic_year,
+      profiles!teacher_id ( full_name, email ),
+      classes!class_id ( name ),
+      subjects!subject_id ( name )
+    `)
+    .eq('academic_year', year)
+
+  archive.append(
+    toCsv(
+      ['Teacher', 'Email', 'Class', 'Subject', 'Term', 'Academic Year'],
+      (subjectAssignments ?? []).map((a: any) => [
+        a.profiles?.full_name ?? '',
+        a.profiles?.email ?? '',
+        a.classes?.name ?? '',
+        a.subjects?.name ?? '',
+        a.term,
+        a.academic_year,
+      ]),
+    ),
+    { name: 'teacher_assignments.csv' },
+  )
+
+  // ── class_teacher_assignments.csv ───────────────────────────────────────
+  const { data: classTeachers } = await adminClient
+    .from('class_teacher_assignments')
+    .select(`
+      term, academic_year,
+      profiles!teacher_id ( full_name, email ),
+      classes!class_id ( name )
+    `)
+    .eq('academic_year', year)
+
+  archive.append(
+    toCsv(
+      ['Class Teacher', 'Email', 'Class', 'Term', 'Academic Year'],
+      (classTeachers ?? []).map((a: any) => [
+        a.profiles?.full_name ?? '',
+        a.profiles?.email ?? '',
+        a.classes?.name ?? '',
+        a.term,
+        a.academic_year,
+      ]),
+    ),
+    { name: 'class_teacher_assignments.csv' },
+  )
+
+  // ── student_remarks.csv ─────────────────────────────────────────────────
+  const { data: remarks } = await adminClient
+    .from('student_remarks')
+    .select(`
+      term, academic_year, times_present, times_absent, times_late,
+      behaviour_rating, teacher_remark, principal_remark, position,
+      students!student_id ( full_name, student_number ),
+      classes!class_id ( name )
+    `)
+    .eq('academic_year', year)
+
+  archive.append(
+    toCsv(
+      [
+        'Class', 'Student', 'Student #', 'Term', 'Academic Year',
+        'Position', 'Times Present', 'Times Absent', 'Times Late',
+        'Behaviour', 'Teacher Remark', 'Principal Remark',
+      ],
+      (remarks ?? []).map((r: any) => [
+        r.classes?.name ?? '',
+        r.students?.full_name ?? '',
+        r.students?.student_number ?? '',
+        r.term,
+        r.academic_year,
+        r.position == null ? '' : String(r.position),
+        String(r.times_present ?? ''),
+        String(r.times_absent ?? ''),
+        String(r.times_late ?? ''),
+        r.behaviour_rating ?? '',
+        r.teacher_remark ?? '',
+        r.principal_remark ?? '',
+      ]),
+    ),
+    { name: 'student_remarks.csv' },
+  )
+
+  await archive.finalize()
+})
+
+function toCsv(headers: string[], rows: string[][]): string {
+  const lines = [headers.map(csvCell).join(',')]
+  for (const row of rows) lines.push(row.map(csvCell).join(','))
+  // BOM up front so Excel handles UTF-8 cleanly.
+  return '﻿' + lines.join('\n')
+}

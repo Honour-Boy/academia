@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { requireWritableYear } from '@/lib/school-settings'
 
 async function assertAdmin() {
   const supabase = await createClient()
@@ -15,9 +16,13 @@ async function assertAdmin() {
   return admin
 }
 
-export async function assignSubjectTeacherAction(formData: FormData) {
+export async function assignSubjectTeacherAction(
+  formData: FormData,
+): Promise<{ error: string } | { success: true }> {
   const admin = await assertAdmin()
   if (!admin) return { error: 'Unauthorised' }
+  const guard = await requireWritableYear()
+  if (guard) return guard
 
   const teacherId = formData.get('teacher_id') as string
   const classId = formData.get('class_id') as string
@@ -45,6 +50,8 @@ export async function assignSubjectTeacherAction(formData: FormData) {
 export async function removeAssignmentAction(assignmentId: string) {
   const admin = await assertAdmin()
   if (!admin) return { error: 'Unauthorised' }
+  const guard = await requireWritableYear()
+  if (guard) return guard
 
   const { error } = await admin
     .from('teacher_assignments')
@@ -66,6 +73,8 @@ export async function bulkUpdateTeacherAssignmentsAction(input: {
 }): Promise<{ added: number; removed: number; error?: string }> {
   const admin = await assertAdmin()
   if (!admin) return { added: 0, removed: 0, error: 'Unauthorised' }
+  const guard = await requireWritableYear()
+  if (guard) return { added: 0, removed: 0, error: guard.error }
 
   const { teacherId, term, academicYear, additions, deletions } = input
 
