@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
-import { FileText } from 'lucide-react'
+import { FileText, Archive } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { TERMS } from '@/lib/grade-utils'
 import { getSchoolSettings } from '@/lib/school-settings'
@@ -62,11 +62,26 @@ export default async function ReportsAdminPage({ searchParams }: Props) {
     <div className="space-y-6">
       <div className="flex items-start sm:items-center gap-3 flex-col sm:flex-row sm:justify-between">
         <div>
-          <h2 className="text-xl sm:text-2xl font-bold text-ink tracking-tight">Report sheets</h2>
+          <div className="flex items-center gap-2 flex-wrap">
+            <h2 className="text-xl sm:text-2xl font-bold text-ink tracking-tight">Report sheets</h2>
+            {/* When the school is browsing a past year, every PDF/CSV
+                generated here reflects that past year's data. Show a pill so
+                the admin doesn't think they're generating the current year. */}
+            {settings.isViewOnlyYear && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider bg-brand-secondary-light text-brand-secondary-dark px-2 py-1 rounded-full ring-1 ring-brand-secondary/40">
+                <Archive className="w-3 h-3" /> Archive view
+              </span>
+            )}
+          </div>
           <p className="text-sm text-ink-muted mt-1">
             Preview or download student report PDFs for <span className="font-medium text-ink">{term} · {year}</span>.
             {totalStudents > 0 && ` ${totalStudents} active ${totalStudents === 1 ? 'student' : 'students'}.`}
           </p>
+          {settings.isViewOnlyYear && (
+            <p className="text-xs text-brand-accent-dark mt-1">
+              Downloads reflect the archived <span className="font-mono">{year}</span> data — nothing here writes to the database.
+            </p>
+          )}
         </div>
         {totalStudents > 0 && <DownloadGradesCSVButton term={term} year={year} />}
       </div>

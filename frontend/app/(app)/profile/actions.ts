@@ -78,6 +78,40 @@ export async function updatePasswordAction(formData: FormData): Promise<
   return { success: true }
 }
 
+/**
+ * Initial password set for OAuth-only users (signed up via Google, never had
+ * a Supabase password). The standard `updatePasswordAction` requires a
+ * current-password re-auth, which OAuth users would always fail.
+ *
+ * Security trade-off: there's no current-password defense here, so a stolen
+ * session token could set a password. That's an inherent property of having
+ * no password to re-auth against — the same exposure Supabase itself has for
+ * OAuth accounts. For users with a password, the regular change-password
+ * path is used and the re-auth defence still applies.
+ */
+export async function setInitialPasswordAction(formData: FormData): Promise<
+  { error: string } | { success: true }
+> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
+
+  const next = (formData.get('new_password') as string) ?? ''
+  const confirm = (formData.get('confirm_password') as string) ?? ''
+
+  if (next.length < 8) return { error: 'Password must be at least 8 characters.' }
+  if (next !== confirm) return { error: 'Password and confirmation do not match.' }
+
+  const { error } = await supabase.auth.updateUser({ password: next })
+  if (error) return { error: 'Failed to set password. Try again.' }
+
+  // Bust the layout cache so the next render refetches the user object and
+  // (if Supabase adds the email identity after a password set) the password
+  // form switches to the regular change-password mode.
+  revalidatePath('/profile')
+  return { success: true }
+}
+
 // ── Session management ───────────────────────────────────────────────────────
 
 /**

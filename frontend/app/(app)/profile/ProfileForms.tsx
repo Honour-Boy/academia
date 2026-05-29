@@ -3,8 +3,8 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Eye, EyeOff, Loader2, Save } from 'lucide-react'
-import { updateProfileAction, updatePasswordAction } from './actions'
+import { Eye, EyeOff, Info, Loader2, Save } from 'lucide-react'
+import { updateProfileAction, updatePasswordAction, setInitialPasswordAction } from './actions'
 
 interface Props {
   defaultName: string
@@ -100,7 +100,17 @@ export function IdentityForm({ defaultName, defaultPhone }: Props) {
   )
 }
 
-export function PasswordForm() {
+interface PasswordFormProps {
+  /**
+   * False when the user signed up via OAuth (e.g. Google) and has never had a
+   * Supabase password. Forces the "set" variant — no current-password field,
+   * no re-auth defence (there's nothing to re-auth against).
+   */
+  hasPassword: boolean
+}
+
+export function PasswordForm({ hasPassword }: PasswordFormProps) {
+  const router = useRouter()
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -114,19 +124,30 @@ export function PasswordForm() {
     setError(null)
     const fd = new FormData(e.currentTarget)
     startTransition(async () => {
-      const result = await updatePasswordAction(fd)
+      const result = hasPassword
+        ? await updatePasswordAction(fd)
+        : await setInitialPasswordAction(fd)
       if ('error' in result) {
         setError(result.error)
         return
       }
-      toast.success('Password updated. Use it next time you sign in.')
+      toast.success(
+        hasPassword
+          ? 'Password updated. Use it next time you sign in.'
+          : 'Password set. You can now sign in with email and password as a backup to Google.',
+      )
       setCurrent('')
       setNext('')
       setConfirm('')
+      // Refresh so the server re-reads `user.identities` and the form may
+      // switch to the standard change-password variant going forward.
+      if (!hasPassword) router.refresh()
     })
   }
 
-  const filled = current && next && confirm
+  const filled = hasPassword
+    ? !!(current && next && confirm)
+    : !!(next && confirm)
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -136,33 +157,47 @@ export function PasswordForm() {
         </div>
       )}
 
-      <div>
-        <label htmlFor="current_password" className="label">Current password</label>
-        <div className="relative mt-1">
-          <input
-            id="current_password"
-            name="current_password"
-            type={showCurrent ? 'text' : 'password'}
-            required
-            autoComplete="current-password"
-            value={current}
-            onChange={(e) => setCurrent(e.target.value)}
-            className="input pr-12"
-          />
-          <button
-            type="button"
-            onClick={() => setShowCurrent((v) => !v)}
-            tabIndex={-1}
-            aria-label={showCurrent ? 'Hide' : 'Show'}
-            className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-ink-subtle hover:text-ink cursor-pointer"
-          >
-            {showCurrent ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-          </button>
+      {!hasPassword && (
+        <div className="rounded-lg bg-brand-secondary-light/60 border border-brand-secondary/40 px-3 py-2.5 text-xs text-brand-accent-dark flex items-start gap-2">
+          <Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+          <span>
+            You signed in with Google and don&apos;t have a password yet. Set one here as a
+            backup &mdash; you&apos;ll still be able to use Google sign-in.
+          </span>
         </div>
-      </div>
+      )}
+
+      {hasPassword && (
+        <div>
+          <label htmlFor="current_password" className="label">Current password</label>
+          <div className="relative mt-1">
+            <input
+              id="current_password"
+              name="current_password"
+              type={showCurrent ? 'text' : 'password'}
+              required
+              autoComplete="current-password"
+              value={current}
+              onChange={(e) => setCurrent(e.target.value)}
+              className="input pr-12"
+            />
+            <button
+              type="button"
+              onClick={() => setShowCurrent((v) => !v)}
+              tabIndex={-1}
+              aria-label={showCurrent ? 'Hide' : 'Show'}
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-ink-subtle hover:text-ink cursor-pointer"
+            >
+              {showCurrent ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div>
-        <label htmlFor="new_password" className="label">New password</label>
+        <label htmlFor="new_password" className="label">
+          {hasPassword ? 'New password' : 'Password'}
+        </label>
         <div className="relative mt-1">
           <input
             id="new_password"
@@ -189,7 +224,9 @@ export function PasswordForm() {
       </div>
 
       <div>
-        <label htmlFor="confirm_password" className="label">Confirm new password</label>
+        <label htmlFor="confirm_password" className="label">
+          {hasPassword ? 'Confirm new password' : 'Confirm password'}
+        </label>
         <input
           id="confirm_password"
           name="confirm_password"
@@ -198,7 +235,7 @@ export function PasswordForm() {
           autoComplete="new-password"
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
-          placeholder="Re-enter the new password"
+          placeholder={hasPassword ? 'Re-enter the new password' : 'Re-enter the password'}
           className="input mt-1"
         />
       </div>
@@ -209,8 +246,8 @@ export function PasswordForm() {
         className="btn-brand disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {pending
-          ? <><Loader2 className="w-4 h-4 animate-spin" /> Updating…</>
-          : 'Update password'}
+          ? <><Loader2 className="w-4 h-4 animate-spin" /> {hasPassword ? 'Updating…' : 'Setting…'}</>
+          : hasPassword ? 'Update password' : 'Set password'}
       </button>
     </form>
   )
