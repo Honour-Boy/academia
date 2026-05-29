@@ -27,17 +27,34 @@ export default async function ReportsAdminPage({ searchParams }: Props) {
   const term = searchParams.term ?? settings.currentTerm
   const year = searchParams.year ?? settings.currentAcademicYear
 
-  const { data: students } = await supabase
-    .from('students')
-    .select('id, full_name, student_number, classes!class_id(name)')
-    .eq('is_active', true)
-    .order('full_name')
+  const [{ data: students }, { data: remarks }] = await Promise.all([
+    supabase
+      .from('students')
+      .select('id, full_name, student_number, classes!class_id(name)')
+      .eq('is_active', true)
+      .order('full_name'),
+    // Pull just the principal_remark column for this term/year so the
+    // per-row button can preload its current value. Filter by student
+    // happens client-side.
+    supabase
+      .from('student_remarks')
+      .select('student_id, principal_remark')
+      .eq('term', term)
+      .eq('academic_year', year),
+  ])
+
+  const principalRemarkByStudent = new Map<string, string | null>()
+  for (const r of remarks ?? []) {
+    const sid = (r as any).student_id as string
+    principalRemarkByStudent.set(sid, ((r as any).principal_remark ?? null) as string | null)
+  }
 
   const reportRows: ReportRow[] = (students ?? []).map((s: any) => ({
     id: s.id as string,
     full_name: s.full_name as string,
     studentNumber: (s.student_number ?? null) as string | null,
     className: s.classes?.name ?? 'Unassigned',
+    principalRemark: principalRemarkByStudent.get(s.id as string) ?? null,
   }))
   const totalStudents = reportRows.length
 
