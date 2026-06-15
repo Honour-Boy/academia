@@ -170,8 +170,10 @@ async function buildReportData(
   //    Class average + Class highest columns. Fetched once per report, then
   //    bucketed per subject. Empty when both flags are off so we don't pay
   //    the round-trip needlessly.
+  // Class-wide per-subject grades back the Class avg / Class highest columns AND
+  // the per-subject Position column, so fetch them when any of those is wanted.
   const wantClassAggregates =
-    (fieldFlags.show_class_average || fieldFlags.show_class_highest)
+    (fieldFlags.show_class_average || fieldFlags.show_class_highest || fieldFlags.show_position)
     && classData
     && subjectIds.length > 0
   type ClassGradeRow = { student_id: string; subject_id: string; component_id: string; score: number | null }
@@ -252,9 +254,10 @@ async function buildReportData(
 
     const percentage = Math.min(100, total)
 
-    // Class aggregates for this subject
+    // Class aggregates + per-subject position for this subject
     let classAverage: number | null = null
     let classHighest: number | null = null
+    let positionInClass: number | null = null
     if (wantClassAggregates) {
       const perStudent = new Map<string, { component_id: string; score: number | null }[]>()
       for (const row of classGrades) {
@@ -263,14 +266,29 @@ async function buildReportData(
         list.push({ component_id: row.component_id, score: row.score })
         perStudent.set(row.student_id, list)
       }
-      const percentages: number[] = []
-      for (const rows of perStudent.values()) {
+      // One percentage per classmate (only those with a score for this subject).
+      const ranked: { studentId: string; pct: number }[] = []
+      for (const [sid, rows] of perStudent) {
         const p = studentPercentageForSubject(subj.id, rows)
-        if (p !== null) percentages.push(p)
+        if (p !== null) ranked.push({ studentId: sid, pct: p })
       }
-      if (percentages.length > 0) {
+      if (ranked.length > 0) {
+        const percentages = ranked.map((r) => r.pct)
         classAverage = percentages.reduce((a, b) => a + b, 0) / percentages.length
         classHighest = percentages.reduce((a, b) => Math.max(a, b), -Infinity)
+
+        // Competition rank (ties share a rank) of THIS student for THIS subject.
+        if (ranked.some((r) => r.studentId === studentId)) {
+          ranked.sort((a, b) => b.pct - a.pct)
+          let lastPct: number | null = null
+          let lastRank = 0
+          for (let i = 0; i < ranked.length; i++) {
+            const rank = ranked[i].pct === lastPct ? lastRank : i + 1
+            if (ranked[i].studentId === studentId) positionInClass = rank
+            lastPct = ranked[i].pct
+            lastRank = rank
+          }
+        }
       }
     }
 
@@ -296,6 +314,7 @@ async function buildReportData(
       grade: gradeForPercentage(percentage, scale),
       classAverage,
       classHighest,
+      positionInClass,
       previousTerms,
     })
   }

@@ -21,6 +21,10 @@ export interface SubjectScore {
   classAverage: number | null
   /** Highest percentage in the class for THIS subject. Filled when settings allow. */
   classHighest: number | null
+  /** Competition rank (1 = top) of THIS student among classmates for THIS subject,
+   *  based on the subject's total this term. Null when the student has no score or
+   *  class data isn't available. */
+  positionInClass: number | null
   /** Prior-term percentages for THIS subject, oldest first. e.g. [First Term: 60]
    *  on a Second-term report. Empty on First-term reports. */
   previousTerms: { term: string; percentage: number | null }[]
