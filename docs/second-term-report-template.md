@@ -97,12 +97,15 @@ possible) to avoid needlessly cascading their data.
 - [ ] PR → staging.
 
 ### Phase 1 — Catalogue remodel migration (subjects + behaviour activities)
-> **Status 2026-06-15:** migration `015_second_term_catalogue.sql` **written**, but
-> **NOT applied**. The Supabase project reachable via MCP (`kjjadbwhjiyjhdwnijwf`) is
-> **empty** — 0 public tables, no `supabase_migrations` schema, `auth.users` = 0. It is
-> not the staging/prod DB that holds real data; that project is not visible to this MCP
-> account. **Blocked on the user:** point MCP at the real staging project (or confirm this
-> empty project should be bootstrapped with migrations 001–015 to become staging).
+> **Status 2026-06-15:** migration `015_second_term_catalogue.sql` **written**; DB confirmed
+> = the correct Academia project (`kjjadbwhjiyjhdwnijwf`, matches `frontend/.env.local`).
+> (An earlier "empty DB" reading was a false alarm — the project was queried mid-resume
+> before its data volume re-attached; once fully active it shows 20 tables / ~14 MB.)
+> Live data: 13 subjects, 2,409 grades (3 First-Term, 2,406 Third-Term — **no Second-Term
+> data**), 826 enrolments, 17 behaviour activities, 153 behaviour scores. Phase 1 would
+> cascade-delete the 8 non-template subjects (~1,479 grades). **Full backup snapshot taken
+> in schema `backup_20260615_phase1`** before applying. Awaiting user go-ahead to execute,
+> now that the real deletion impact is known.
 - [ ] New migration `015_second_term_catalogue.sql`:
   - Upsert/rename `subjects` to the 16 template names; delete any not in the list
     (cascade caveat above). Prefer `UPDATE … WHERE name ILIKE old` to rename matches
