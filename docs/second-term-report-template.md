@@ -120,6 +120,8 @@ possible) to avoid needlessly cascading their data.
 - [ ] PR → staging. (Do **not** apply to prod until the user approves + backs up.)
 
 ### Phase 2 — Per-subject class position (data layer)
+> **Status 2026-06-15: ✅ done (PR #47, merged).** `SubjectScore.positionInClass` computed in
+> `buildReportData` (competition ranking from the class-roster grades).
 - [ ] Add per-subject ranking: for each subject in a class+term+year, rank active
       students by that subject's total (competition ranking, ties share rank), mirroring
       `recomputeAndPersistClassRank`'s tie logic.
@@ -130,6 +132,15 @@ possible) to avoid needlessly cascading their data.
 - [ ] PR → staging.
 
 ### Phase 3 — Second-Term template overlay renderer
+> **Status 2026-06-15: ✅ done.** `backend/src/templates/secondTermOverlay.ts` renders with
+> `pdf-lib`. Coordinates derived by grid-line detection on the template image and validated
+> via an SVG-over-JPEG composite (the renderer uses the same px→pt math). Wired into
+> `GET /reports/student/:id` + `POST /reports/bulk` for `term === 'Second Term'`; other
+> terms keep the PDFKit generator. Discovered the sheet's Part B has **16** activities (last
+> is "Handwriting") — added via migration `016_add_handwriting_activity.sql` (applied) and
+> seeded. `classSize` added to `ReportData` for "Number in class". "Sex" has no DB source
+> (no gender column) → left blank, like teacher's sign / school fees. Could not rasterize
+> the PDF locally (no poppler); user to eyeball a real download.
 - [ ] Add `pdf-lib` to `backend` deps.
 - [ ] New module `backend/src/templates/secondTermOverlay.ts`:
   - Load `report_sheet_template.pdf`, get page 1.

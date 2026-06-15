@@ -8,6 +8,7 @@ import { heavyExportLimiter } from '../middleware/rateLimit'
 import { adminClient } from '../lib/supabase'
 import { defaultTemplate } from '../templates/parser'
 import { streamReportPDF, type ReportData, type SubjectScore, type BehaviourActivityScore } from '../templates/generator'
+import { renderSecondTermPDF, secondTermReportBuffer } from '../templates/secondTermOverlay'
 import { academicYearSchema, termSchema, uuidSchema } from '../lib/validators'
 
 export const reportsRouter = Router()
@@ -147,6 +148,17 @@ async function buildReportData(
 
     classTeacherName =
       (cta as any)?.profiles?.full_name ?? null
+  }
+
+  // Active-student count in the class — for the report's "Number in class".
+  let classSize: number | null = null
+  if (classData) {
+    const { count } = await adminClient
+      .from('students')
+      .select('id', { count: 'exact', head: true })
+      .eq('class_id', classData.id)
+      .eq('is_active', true)
+    classSize = count ?? null
   }
 
   // Fetch grades for all subjects
@@ -377,6 +389,7 @@ async function buildReportData(
     studentName: student.full_name,
     studentNumber: student.student_number ?? null,
     className: classData?.name ?? '',
+    classSize,
     classTeacherName,
     term,
     academicYear,
@@ -441,6 +454,14 @@ reportsRouter.get('/student/:id', heavyExportLimiter, async (req, res) => {
   const filename = `${slugify(reportData.studentName)}_Report_Sheet.pdf`
   res.setHeader('Content-Type', 'application/pdf')
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+
+  // Second Term uses the school's fixed template (overlay renderer); other terms
+  // keep the from-scratch generator until their own templates arrive.
+  if (term === 'Second Term') {
+    const bytes = await renderSecondTermPDF(reportData)
+    res.end(Buffer.from(bytes))
+    return
+  }
 
   streamReportPDF(reportData, defaultTemplate(), res)
 })
@@ -523,8 +544,10 @@ reportsRouter.post('/bulk', heavyExportLimiter, async (req, res) => {
 
     const filename = `${slugify(data.studentName)}_Report_Sheet.pdf`
 
-    // Collect the PDF into a buffer then append
-    const pdfBuffer = await pdfToBuffer(data, template)
+    // Second Term → fixed-template overlay; other terms → from-scratch generator.
+    const pdfBuffer = term === 'Second Term'
+      ? await secondTermReportBuffer(data)
+      : await pdfToBuffer(data, template)
     archive.append(pdfBuffer, { name: filename })
   }
 

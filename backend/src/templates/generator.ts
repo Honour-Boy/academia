@@ -53,6 +53,8 @@ export interface ReportData {
   studentName: string
   studentNumber: string | null
   className: string
+  /** Active-student count in the class — for the template's "Number in class". */
+  classSize: number | null
   classTeacherName: string | null
   term: string
   academicYear: string
